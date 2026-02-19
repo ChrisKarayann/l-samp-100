@@ -1,0 +1,1948 @@
+// --- THEME BRIDGE ---
+// We store the numbers so rgba() works. 
+// Teal: 0, 255, 204 | Amber: 255, 191, 0 | Marooned: 255, 77, 77
+:root {
+    --accent-rgb: 0, 255, 204;
+    // This allows the entire UI to "morph" colors smoothly
+    transition: --accent-rgb 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+// Map the SCSS variable to use the RGB variable
+$accent: rgb(var(--accent-rgb));
+$accent-raw: var(--accent-rgb); // For use inside rgba()
+
+// Original Variables
+$bg-dark: #111111;
+$panel-bg: #1a1a1a;
+$pad-idle: hsl(0, 0%, 13%);
+
+// New Font Variables
+$font-main: 'Geist', sans-serif;
+$font-mono: 'Geist Mono', monospace;
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    /* Use 100% instead of 100vw to avoid scrollbar-width math */
+    height: 100%;
+    /* Use 100% instead of 100vh */
+    overflow: hidden;
+    background: #111;
+    position: fixed;
+    /* Prevents "rubber-banding" on certain trackpads */
+}
+
+:host {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+    background: #111;
+    perspective: 1000px; // Adds depth for any 3D transforms
+}
+
+@keyframes crtTurnOn {
+    0% {
+        transform: scaleY(0.005) scaleX(0);
+        opacity: 0;
+        filter: brightness(5);
+    }
+
+    40% {
+        transform: scaleY(0.005) scaleX(1);
+        opacity: 1;
+        filter: brightness(3);
+    }
+
+    70% {
+        transform: scaleY(1) scaleX(1);
+        filter: brightness(1.5);
+    }
+
+    100% {
+        transform: scaleY(1) scaleX(1);
+        filter: brightness(1);
+    }
+}
+
+
+.sampler-shell {
+    background: $bg-dark;
+    color: white;
+    /* Force fixed dimensions matching the design */
+    width: 1252px !important;
+    height: 736px !important;
+    flex-shrink: 0;
+
+    box-sizing: border-box;
+    /* Absolute necessity */
+    padding: 25px;
+    /* Slightly reduced to give 1240x712 more air */
+    font-family: $font-main;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    /* Double-lock */
+
+    header,
+    .pad-cell,
+    .control-panel,
+    .model-number {
+        transition: border-color 0.4s ease, background-color 0.4s ease, box-shadow 0.4s ease, color 0.4s ease;
+    }
+
+    // CRT Startup Animation
+    animation: crtTurnOn 0.6s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+    // Add a deep shadow to separate it from the letterbox background
+    box-shadow: 0 0 100px rgba(0, 0, 0, 0.9);
+
+    header {
+        flex-shrink: 0; // Don't let header squash
+        margin-bottom: 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        border-bottom: 1px solid rgba($accent-raw, 0.15);
+        padding-bottom: 20px;
+        position: relative; // For centering
+
+
+
+        .brand-unit {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+
+            h1 {
+                font-family: $font-mono;
+                font-size: 1.8rem;
+                letter-spacing: 5px;
+                color: #fff;
+                margin: 0;
+                display: flex;
+                align-items: center;
+
+                // The "100" Badge
+                .model-number {
+                    font-size: 0.9rem;
+                    color: $accent;
+                    background: rgba($accent-raw, 0.05);
+                    padding: 2px 8px;
+                    margin-left: 12px;
+                    border: 1px solid rgba($accent-raw, 0.2);
+                    border-radius: 2px;
+                    letter-spacing: 1px;
+                }
+            }
+
+            .unit-subtitle {
+                font-family: $font-mono;
+                font-size: 0.6rem;
+                color: #444;
+                text-transform: uppercase;
+                letter-spacing: 2px;
+            }
+        }
+
+        .global-status {
+            font-family: $font-mono;
+            color: rgba($accent-raw, 0.4);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 4px;
+            width: 180px; // Fixed width to prevent shifting
+            text-align: right;
+            flex-shrink: 0;
+
+            &.alive {
+                color: $accent;
+                text-shadow: 0 0 10px rgba($accent-raw, 0.4);
+            }
+        }
+    }
+}
+
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+
+    button {
+        font-family: $font-mono;
+        font-size: 0.7rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        padding: 8px 16px;
+        background: rgba(0, 0, 0, 0.2);
+        border: 1px solid rgba($accent-raw, 0.3);
+        color: rgba($accent-raw, 0.7);
+        border-radius: 2px;
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+        &.active-mode {
+            background: rgba($accent-raw, 0.1);
+            border-color: $accent;
+            color: $accent;
+            box-shadow: 0 0 15px rgba($accent-raw, 0.15);
+        }
+
+        &:hover {
+            background: rgba($accent-raw, 0.1);
+            color: $accent;
+            border-color: $accent;
+        }
+    }
+}
+
+.icon-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: $font-mono;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba($accent-raw, 0.2);
+    color: #888;
+    padding: 8px 14px;
+    border-radius: 2px;
+    transition: all 0.25s ease;
+
+    .list-icon {
+        width: 14px;
+        height: 14px;
+    }
+
+    &:hover {
+        background: rgba($accent-raw, 0.08);
+        color: #fff;
+        border-color: $accent;
+        box-shadow: 0 0 10px rgba($accent-raw, 0.1);
+    }
+}
+
+.menu-dropdown-wrapper {
+    position: relative;
+
+    .menu-btn {
+        height: 32px; // Fixed height to match buttons
+        box-sizing: border-box;
+        padding: 0 12px; // Horizontal padding only, vertical managed by height/center
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba($accent-raw, 0.2);
+        color: #888;
+        cursor: pointer;
+        border-radius: 2px;
+        transition: all 0.25s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        svg {
+            width: 16px;
+            height: 16px;
+            transition: transform 0.4s ease;
+        }
+
+        &:hover {
+            background: rgba($accent-raw, 0.08);
+            color: #fff;
+            border-color: $accent;
+
+            svg {
+                transform: rotate(45deg);
+                stroke: $accent;
+            }
+        }
+    }
+
+    .menu-dropdown {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        margin-top: 8px;
+        background: $panel-bg;
+        border: 1px solid rgba($accent-raw, 0.3);
+        border-radius: 4px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        min-width: 200px;
+        overflow: hidden;
+
+        .menu-item {
+            padding: 12px 16px;
+            font-family: $font-mono;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #888;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+
+            &:hover {
+                background: rgba($accent-raw, 0.1);
+                color: $accent;
+            }
+        }
+
+        .menu-item-divider {
+            height: 1px;
+            background: rgba($accent-raw, 0.15);
+        }
+    }
+}
+
+.sampler-container {
+    display: flex;
+    flex-direction: row;
+    gap: 30px;
+    flex: 1;
+    min-height: 0;
+    /* Crucial for flex children to allow inner scrolling instead of pushing parent */
+    width: 100%;
+    overflow: hidden;
+    align-items: stretch;
+}
+
+.grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-auto-rows: auto;
+    gap: 12px;
+    overflow-y: auto;
+    /* Only allow the grid to scroll if pads are huge */
+    overflow-x: hidden;
+    /* Strictly forbid horizontal drift */
+    padding-right: 5px;
+    align-content: start;
+
+    // Scrollbar styling for the internal grid
+    &::-webkit-scrollbar {
+        width: 4px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background: rgba($accent-raw, 0.2);
+        border-radius: 10px;
+    }
+
+    /* Keep it functional but silent */
+    &::-webkit-scrollbar {
+        width: 0px; // Or 2px for a very thin line
+        background: transparent;
+    }
+}
+
+.pad-cell {
+    position: relative; // Crucial for anchoring the selection triangle
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    // CHANGE: Force the square ratio
+    aspect-ratio: 1 / 1;
+    // height: 180px;
+    display: flex;
+    flex-direction: column;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-radius: 6px;
+    overflow: hidden;
+
+    box-shadow:
+        inset 0 0 15px rgba(0, 0, 0, 0.5),
+        0 4px 6px rgba(0, 0, 0, 0.3);
+
+    transition: transform 0.05s ease, box-shadow 0.05s ease;
+
+    &:active,
+    &.active {
+        border-radius: 4px;
+        transform: scale(0.98);
+    }
+
+    &.selected {
+        border-color: rgba($accent-raw, 0.5);
+        background: rgba($accent-raw, 0.04);
+
+        // Tiny triangle at upper-left corner (Spreadsheet comment style)
+        &::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 0;
+            height: 0;
+            border-top: 8px solid $accent;
+            border-right: 8px solid transparent;
+            border-top-left-radius: 2px;
+            z-index: 10;
+            pointer-events: none;
+            filter: drop-shadow(0 0 4px rgba($accent-raw, 0.6));
+        }
+    }
+
+    &.playing {
+        border-color: $accent;
+        box-shadow: 0 0 15px rgba($accent-raw, 0.2);
+
+        .key-label {
+            color: #fff;
+            text-shadow: 0 0 10px $accent;
+        }
+
+        .pad-footer {
+            opacity: 1;
+        }
+    }
+
+    .pad-footer {
+        height: 30px; // Restored to original "spot on" height
+        background: rgba(0, 0, 0, 0.3);
+        position: relative;
+        overflow: hidden; // Keep the bar contained
+        opacity: 0.5;
+        transition: opacity 0.2s;
+
+        .fade-progress-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 0%; // Default state (off)
+            background: linear-gradient(90deg, rgba($accent-raw, 0.1), rgba($accent-raw, 0.3));
+            z-index: 0; // Behind the waveform
+            pointer-events: none;
+            transition-property: width;
+            transition-timing-function: linear;
+
+            &.active {
+                width: 100%; // Target state (playing)
+            }
+        }
+
+        .mini-oscillator {
+            position: relative;
+            z-index: 1; // Above the progress bar
+            width: 100%;
+            height: 100%;
+        }
+    }
+
+    .pad-header {
+        padding: 8px;
+        background: rgba(0, 0, 0, 0.2);
+
+        .pad-name-input {
+            background: transparent;
+            border: none;
+            color: #444; // Matching unit subtitles for ghost dim look
+            font-family: $font-mono;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            width: 100%;
+            text-align: center;
+            outline: none;
+            letter-spacing: 1px;
+            transition: border-color 0.2s ease, background 0.2s ease; // No color transition
+
+            &::placeholder {
+                color: #333; // Truly dim ghost placeholder
+                opacity: 1; // Prevent browser transparency
+                transition: color 0.2s ease;
+            }
+
+            &:focus {
+                color: $accent;
+
+                &::placeholder {
+                    color: transparent;
+                }
+            }
+        }
+    }
+
+    .pad-body {
+        flex-grow: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+
+        .key-label {
+            font-family: $font-mono;
+            // CHANGE: Slightly smaller font to fit the square constrained space
+            font-size: 1.8rem;
+            //font-size: 2.2rem;
+            font-weight: 300;
+            color: #222;
+        }
+
+        .time-remaining {
+            position: absolute;
+            bottom: 0px;
+            right: 0px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.8rem;
+            letter-spacing: 1px;
+            color: $accent;
+            text-shadow: 0 0 8px rgba($accent-raw, 0.4);
+            padding: 2px 4px;
+            border-radius: 2px;
+            pointer-events: none;
+        }
+
+        .status-dot {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: #1a1a1a;
+
+            &.loaded {
+                background: $accent;
+                box-shadow: 0 0 5px $accent;
+            }
+        }
+
+        .loop-indicator {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            width: 12px;
+            height: 12px;
+            // Explicit dimmed state
+            color: rgba(255, 255, 255, 0.15);
+            opacity: 0.3;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+
+            svg {
+                width: 100%;
+                height: 100%;
+                display: block;
+            }
+
+            &.active-playing {
+                color: $accent;
+                opacity: 1;
+                // A static, high-intensity glow to signal the "Phase-Lock"
+                filter: drop-shadow(0 0 8px rgba($accent-raw, 0.6));
+                transform: scale(1.1); // Subtle "pop" when engaged
+            }
+        }
+
+        .pad-controls {
+            position: absolute;
+            bottom: 0px;
+            left: 0px;
+            display: flex;
+            align-items: flex-end; // Levelled with timecode
+            gap: 6px;
+            z-index: 5;
+            padding: 2px 4px;
+
+            .pad-bpm-box {
+                position: relative;
+                display: flex;
+                align-items: baseline;
+                gap: 2px;
+                transition: opacity 0.2s;
+                cursor: text;
+                margin-left: 3px;
+                min-width: 52px;
+
+                .bpm-value-display {
+                    color: $accent;
+                    font-family: 'Courier New', Courier, monospace;
+                    font-size: 0.8rem;
+                    letter-spacing: 1px;
+                    opacity: 0.4; // FURTHER dimmed as requested
+                    text-shadow: 0 0 4px rgba($accent-raw, 0.3); // Softened glow
+                    display: flex;
+                    align-items: baseline;
+                    pointer-events: none;
+                    transition: all 0.3s ease;
+
+                    &.synced {
+                        color: #666; // Greyed out
+                        opacity: 0.3;
+                        text-shadow: none;
+                    }
+
+                    .dec {
+                        font-size: 0.6rem;
+                        opacity: 0.8;
+                    }
+
+                    .dot {
+                        font-size: 0.6rem;
+                        margin: 0 -1px;
+                    }
+                }
+
+                input {
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: transparent;
+                    border: none;
+                    color: transparent; // Hide actual typing text
+                    caret-color: $accent; // Only show blinking cursor
+                    font-family: 'Courier New', Courier, monospace;
+                    font-size: 0.8rem;
+                    padding: 0;
+                    margin: 0;
+                    outline: none;
+                    box-shadow: none;
+
+                    &:focus {
+                        background: none;
+                        border: none;
+                        outline: none;
+                        box-shadow: none;
+                    }
+                }
+
+                .label {
+                    font-family: $font-mono;
+                    font-size: 0.5rem;
+                    color: rgba($accent-raw, 0.5);
+                    transform: translateY(-1px);
+                    letter-spacing: 0.5px;
+                    margin-left: 2px;
+                }
+            }
+
+            .sync-icon {
+                width: 16px;
+                height: 16px;
+                color: #888; // Whiter/less grey for visibility
+                cursor: pointer;
+                opacity: 0.5; // Increased visibility
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+
+                &:hover {
+                    opacity: 0.6;
+                    color: rgba($accent-raw, 0.5);
+                }
+
+                &.active {
+                    opacity: 1;
+                    color: $accent;
+                    filter: drop-shadow(0 0 5px rgba($accent-raw, 0.4));
+                    animation: sync-pulse 2s infinite ease-in-out;
+                }
+
+                svg {
+                    width: 100%;
+                    height: 100%;
+                }
+            }
+        }
+    }
+}
+
+@keyframes sync-pulse {
+    0% {
+        transform: scale(1);
+        opacity: 1;
+    }
+
+    50% {
+        transform: scale(1.1);
+        opacity: 0.8;
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.master-bpm-rail {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba($accent-raw, 0.15);
+    border-radius: 2px;
+    height: 32px; // Match exactly with buttons
+    box-sizing: border-box;
+    padding: 0 12px 0 0; // Space for the selector on the left
+    box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.6);
+    cursor: ns-resize;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+
+    .clock-mode-selector {
+        display: flex;
+        flex-direction: column;
+        width: 18px;
+        height: 100%;
+        margin-right: 8px;
+        border-right: 1px solid rgba($accent-raw, 0.1);
+
+        button {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.2);
+            border: none;
+            color: #555;
+            font-family: inherit;
+            font-size: 8px;
+            font-weight: bold;
+            padding: 0;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            &:first-child {
+                border-bottom: 1px solid rgba($accent-raw, 0.05);
+            }
+
+            &.active {
+                color: var(--accent-color);
+                background: rgba($accent-raw, 0.05);
+                text-shadow: 0 0 6px var(--accent-color);
+            }
+
+            &:hover:not(.active) {
+                color: #888;
+                background: rgba(255, 255, 255, 0.05);
+            }
+        }
+    }
+
+    &:hover {
+        border-color: rgba($accent-raw, 0.4);
+        background: rgba(0, 0, 0, 0.6);
+        box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.8), 0 0 10px rgba($accent-raw, 0.1);
+    }
+
+    .bpm-lcd {
+        display: flex;
+        flex-direction: row; // Labels on left, numeral on right
+        align-items: center;
+        gap: 12px;
+
+        .bpm-label-stack {
+            display: flex;
+            flex-direction: column;
+            text-align: right;
+            font-family: $font-mono;
+            font-size: 0.45rem;
+            color: rgba($accent-raw, 0.4);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            line-height: 1.1;
+            width: 48px;
+            flex-shrink: 0;
+            opacity: 0.8;
+        }
+
+        .digits {
+            display: flex;
+            align-items: baseline;
+            font-family: $font-mono;
+            color: $accent;
+            line-height: 1;
+
+            .value {
+                font-size: 1.2rem;
+                font-weight: 600;
+            }
+
+            .decimal {
+                font-size: 0.8rem;
+                opacity: 0.6;
+            }
+        }
+
+        .unit {
+            display: none;
+        }
+    }
+}
+
+.pad {
+    position: relative;
+    aspect-ratio: 1/1;
+    background: $pad-idle;
+    border: 1px solid #333;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.1s ease;
+
+    .key-label {
+        font-family: 'Courier New', monospace;
+        font-size: 1.5rem;
+        color: #555;
+        pointer-events: none;
+    }
+
+    .sampler-shell:not(.silent-mode) & {
+        &.playing {
+            background: rgba($accent-raw, 0.15);
+            border-color: rgba($accent-raw, 0.5);
+
+            .key-label {
+                color: $accent;
+                text-shadow: 0 0 8px rgba($accent-raw, 0.5);
+            }
+
+            &.selected {
+                border: 2px solid $accent;
+                background: rgba($accent-raw, 0.25);
+            }
+
+            &.active {
+                background: $accent !important;
+                box-shadow: 0 0 40px rgba($accent-raw, 0.8);
+
+                .key-label {
+                    color: #000;
+                }
+            }
+        }
+
+        &.active:not(.playing) {
+            background: $accent !important;
+            box-shadow: 0 0 40px rgba($accent-raw, 0.8);
+
+            .key-label {
+                color: #000;
+            }
+        }
+    }
+
+    &.selected {
+        border: 2px solid $accent;
+
+        &:not(.playing):not(.active) {
+            background: #2a2a2a; // Replaced lighten() for variable compatibility
+        }
+    }
+
+    .status-dot {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #444;
+
+        &.loaded {
+            background: $accent;
+            box-shadow: 0 0 5px $accent;
+        }
+    }
+}
+
+.control-panel {
+    width: 380px; // Fixed width for the sidebar
+    flex-shrink: 0; // Don't let it shrink
+    background: $panel-bg;
+    border-radius: 8px;
+    padding: 25px;
+    border-top: 2px solid $accent; // Your signature top border
+    display: flex;
+    flex-direction: column;
+    height: auto; // 1. Change from 100% to auto
+    align-self: stretch;
+    /* 2. This forces the sidebar to match the height of the Grid container */
+    margin-bottom: 0;
+    /* 3. Ensure no margin is pushing it up */
+    box-sizing: border-box;
+    margin-top: 0;
+    box-shadow: -10px 0 30px rgba(0, 0, 0, 0.3); // Sidebar shadow
+    animation: slideIn 0.2s ease-out;
+
+    .control-body {
+        flex: 1;
+        overflow-y: auto; // If settings are too tall, scroll inside the panel
+        padding-right: 5px;
+
+        &::-webkit-scrollbar {
+            width: 2px;
+        }
+
+        &::-webkit-scrollbar-thumb {
+            background: #333;
+        }
+    }
+
+    optgroup {
+        background: #000;
+        color: #555; // Dimmer color for the folder names
+        font-family: $font-mono;
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        padding: 10px;
+    }
+
+    option {
+        background: $panel-bg;
+        color: #fff;
+        padding: 5px 10px;
+        // This gives the "Track" a slight indent under the "Folder"
+    }
+
+    // Ensure parameters stack nicely in the narrower sidebar
+    .parameter-grid {
+        grid-template-columns: 1fr; // Vertical stack inside sidebar
+    }
+
+    .panel-header {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 18px;
+
+        h3 {
+            margin: 0;
+            color: $accent;
+            font-weight: 400;
+        }
+
+        .file-status {
+            font-size: 0.75rem;
+            letter-spacing: 1px;
+
+            &.loading {
+                color: #ffbf00; // Amber loading state
+                font-weight: bold;
+                text-shadow: 0 0 10px rgba(255, 191, 0, 0.4);
+                animation: pulse 1.5s infinite;
+            }
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 0.6;
+            }
+
+            50% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 0.6;
+            }
+        }
+    }
+
+    .source-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end; // Aligns the button text with the label baseline
+        margin-bottom: 10px;
+
+        label {
+            margin-bottom: 0 !important; // Override default label margin
+        }
+    }
+
+    .inject-btn-compact {
+        cursor: pointer;
+        font-family: $font-mono;
+        font-size: 0.65rem;
+        // text-transform: uppercase;
+        letter-spacing: 1px;
+        color: rgba($accent-raw, 0.6);
+        transition: all 0.2s ease;
+        border-bottom: 1px solid transparent;
+
+        input[type="file"] {
+            display: none;
+        }
+
+        &:hover {
+            color: $accent;
+            border-bottom: 1px solid $accent;
+        }
+
+        span {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+
+            &:before {
+                content: '+'; // Simple technical glyph
+                font-size: 0.8rem;
+            }
+        }
+    }
+}
+
+.display-group {
+    margin-bottom: 20px;
+
+    label {
+        color: #888;
+        font-size: 0.8rem;
+        display: block;
+        margin-bottom: 8px;
+    }
+
+    .file-path-display {
+        background: #000;
+        padding: 12px;
+        border-radius: 4px;
+        border: 1px solid #333;
+        overflow: hidden;
+
+        code {
+            color: $accent;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            white-space: nowrap;
+        }
+    }
+}
+
+.harbor-selector {
+    display: flex;
+    gap: 1px; // Sharp, technical gap
+    background: #000;
+    border: 1px solid rgba($accent-raw, 0.2);
+    border-radius: 2px;
+    overflow: hidden;
+
+    select {
+        flex: 1;
+        background: transparent;
+        border: none;
+        color: $accent;
+        padding: 12px;
+        font-family: $font-mono;
+        font-size: 0.8rem;
+        outline: none;
+        cursor: pointer;
+        appearance: none; // Removes the default arrow for a custom look
+
+        option {
+            background: $panel-bg;
+            color: white;
+        }
+    }
+
+    .refresh-btn {
+        background: rgba($accent-raw, 0.05);
+        border: none;
+        border-left: 1px solid rgba($accent-raw, 0.2);
+        color: rgba($accent-raw, 0.5);
+        width: 40px;
+        cursor: pointer;
+        transition: all 0.1s ease-out; // Faster transition for immediate feedback
+
+        &:hover {
+            background: rgba($accent-raw, 0.1);
+            color: $accent;
+        }
+
+        &:active {
+            // 1. Instant Response: No transition for the press itself
+            transition: none;
+
+            // 2. Inner Glow: Filling the button with light
+            background: rgba($accent-raw, 0.15);
+
+            // 3. The Photonic Hit: A bloom effect
+            color: $accent;
+            text-shadow: 0 0 12px $accent, 0 0 20px rgba($accent-raw, 0.5);
+
+            // 4. Outer Diffusion: A soft glow bleeding from the edges
+            box-shadow: inset 0 0 15px rgba($accent-raw, 0.2),
+                0 0 10px rgba($accent-raw, 0.1);
+        }
+    }
+}
+
+.action-button {
+    display: inline-block;
+    padding: 10px 20px;
+    background: #333;
+    color: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background 0.2s;
+
+    input[type="file"] {
+        display: none;
+    }
+
+    &:hover {
+        background: #444;
+    }
+}
+
+.parameter-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px; // Tighter rack spacing
+}
+
+.param-box {
+    background: rgba(255, 255, 255, 0.03);
+    padding: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    height: auto; // Let content dictate height
+
+    // THE UNIFIER
+    //height: 110px;
+    //box-sizing: border-box;
+    //display: flex;
+    //flex-direction: column;
+    //justify-content: space-between;
+    /* Pushes label to top, slider/btn to bottom */
+
+    label {
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #666;
+    }
+}
+
+.gain-pulse-icon,
+.envelope-icon {
+    width: 36px;
+    height: 12px;
+    overflow: visible;
+    filter: drop-shadow(0 0 2px var(--accent-color));
+    transition: all 0.1s ease-out; // Smooths the "inflation" of the sine wave
+}
+
+.gain-pulse-icon path {
+    transition: d 0.15s cubic-bezier(0.4, 0, 0.2, 1); // Makes the shape "pop"
+}
+
+.row-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.vol-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 1.5px;
+    background: #1a1a1a;
+    border-radius: 1px;
+    outline: none;
+    margin: 10px 0 0 0;
+
+    &::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 14px;
+        height: 14px;
+        background: $accent;
+        border-radius: 50%;
+        cursor: pointer;
+        box-shadow: 0 0 8px rgba($accent-raw, 0.4);
+        transition: all 0.1s ease;
+
+        &:hover {
+            transform: scale(1.1);
+            background: #fff;
+            box-shadow: 0 0 15px #fff;
+        }
+    }
+
+    &:active::-webkit-slider-thumb {
+        background: #fff;
+        box-shadow: 0 0 12px #fff;
+    }
+}
+
+// Special handling for the double-slider Envelope box
+.fade-row {
+    display: flex;
+    gap: 15px;
+    align-items: flex-end;
+}
+
+.fade-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+
+    label {
+        font-size: 0.6rem;
+        margin-bottom: 5px;
+        color: #666;
+    }
+}
+
+.fade-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    .envelope-icon {
+        width: 36px; // Slightly smaller to match shorter height
+        height: 12px;
+        filter: drop-shadow(0 0 2px var(--accent-color));
+    }
+}
+
+.glow-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 3px;
+    background: #1a1a1a;
+    border-radius: 4px;
+    outline: none;
+    margin: 8px 0 2px 0;
+    border: 1px solid #222;
+
+    &::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 12px;
+        height: 12px;
+        background: $accent;
+        border-radius: 50%;
+        cursor: pointer;
+        box-shadow: 0 0 10px rgba($accent-raw, 0.5);
+        transition: all 0.1s ease;
+
+        &:hover {
+            transform: scale(1.1);
+            background: #fff;
+            box-shadow: 0 0 15px #fff;
+        }
+    }
+
+    &:active::-webkit-slider-thumb {
+        background: #fff;
+    }
+}
+
+.mini-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 2px;
+    background: #222;
+    outline: none;
+
+    &::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 10px;
+        height: 10px;
+        background: #555;
+        border-radius: 50%;
+        cursor: pointer;
+        transition: background 0.2s;
+
+        &:hover {
+            background: $accent;
+        }
+    }
+}
+
+.loop-toggle-btn-compact {
+    min-width: 85px;
+    height: 28px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #555;
+    padding: 0 12px;
+    font-family: $font-mono;
+    font-size: 0.6rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.2s ease;
+
+    .rolling-icon {
+        width: 12px;
+        height: 12px;
+        opacity: 0.8;
+    }
+
+    &.active {
+        color: $accent;
+        border-color: rgba($accent-raw, 0.4);
+        background: rgba($accent-raw, 0.05);
+
+        // Trigger the mechanical snap
+        .rolling-icon {
+            animation: fast-snap 0.5s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+        }
+    }
+
+    &.active {
+        .rolling-icon {
+            /* 0.7s gives it enough 'air time' to feel smooth, not snappy */
+            animation: smooth-whir 0.7s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+        }
+    }
+}
+
+@keyframes smooth-whir {
+    0% {
+        transform: rotate(0deg);
+        opacity: 0;
+        filter: blur(2px); // Subtle motion blur for the 'Sincere' look
+    }
+
+    20% {
+        opacity: 1;
+        filter: blur(0px);
+    }
+
+    100% {
+        transform: rotate(360deg);
+        opacity: 1;
+        filter: blur(0px);
+    }
+}
+
+
+// Placeholder Styling
+.empty-state-mini {
+    font-family: $font-mono;
+    font-size: 0.6rem;
+    color: #333;
+    margin-top: 8px;
+    font-style: italic;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.global-reset-flash {
+    animation: flashRed 0.3s ease-out;
+}
+
+@keyframes flashRed {
+    0% {
+        background-color: rgba(255, 0, 0, 0.2);
+    }
+
+    100% {
+        background-color: transparent;
+    }
+}
+
+.mini-oscillator {
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(0 0 3px rgba($accent-raw, 0.3));
+}
+
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(8px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: #0f0f0f;
+    border: 1px solid rgba($accent-raw, 0.3);
+    width: 500px;
+    max-height: 80vh;
+    padding: 40px;
+    position: relative;
+    box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+
+    .close-btn {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        background: transparent;
+        border: none;
+        color: #555;
+        cursor: pointer;
+
+        &:hover {
+            color: $accent;
+        }
+    }
+
+    .accent {
+        color: $accent;
+    }
+
+    h2 {
+        letter-spacing: 3px;
+        margin-bottom: 5px;
+        font-weight: 300;
+    }
+
+    .text-block {
+        margin-top: 30px;
+        line-height: 1.6;
+        color: #888;
+
+        blockquote {
+            border-left: 2px solid $accent;
+            padding-left: 15px;
+            font-style: italic;
+        }
+    }
+}
+
+.manual {
+
+    .divider {
+        border: 0;
+        border-top: 1px solid rgba($accent-raw, 0.2);
+        margin: 20px 0;
+    }
+
+    .unit-subtitle {
+        font-size: 0.7rem;
+        color: #888;
+        margin-bottom: 15px;
+    }
+
+
+    .manual-section {
+        margin-bottom: 25px;
+
+
+        h3 {
+            font-size: 0.9rem;
+            color: $accent;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+
+            .step-num {
+                font-size: 0.6rem;
+                border: 1px solid $accent;
+                padding: 2px 4px;
+                margin-right: 10px;
+                border-radius: 2px;
+            }
+        }
+
+        p {
+            font-size: 0.75rem;
+            line-height: 1.6;
+            color: #666;
+        }
+    }
+
+    .manual-footer {
+        font-size: 0.9rem;
+        color: #888;
+    }
+}
+
+.empty-state {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    min-height: 120px;
+    text-align: center;
+
+    .empty-message {
+        opacity: 0.3;
+
+        p {
+            font-size: 0.7rem;
+            letter-spacing: 2px;
+            color: #888;
+            margin-bottom: 15px;
+        }
+
+        .decorative-line {
+            width: 100px;
+            height: 1px;
+            background: $accent;
+            margin: 0 auto;
+            box-shadow: 0 0 10px rgba($accent-raw, 0.5);
+        }
+    }
+}
+
+.info-layout {
+    .studio-credits {
+        margin: 25px 0;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        border-left: 1px solid rgba($accent-raw, 0.2);
+        padding-left: 20px;
+    }
+
+    .credit-row {
+        display: flex;
+        flex-direction: column; // Stacked for a modern, architectural feel
+
+        .role {
+            font-family: $font-mono;
+            font-size: 0.55rem;
+            letter-spacing: 2px;
+            color: #555;
+            margin-bottom: 2px;
+        }
+
+        .entity {
+            font-family: $font-mono;
+            font-size: 0.7rem;
+            letter-spacing: 1px;
+            color: $accent; // This makes your name and company pop!
+        }
+    }
+
+    p {
+        color: #666; // Ensuring no more black-on-black text
+        line-height: 1.6;
+        font-size: 0.75rem;
+    }
+
+    .purpose-section {
+        font-size: 0.8rem;
+    }
+
+    .logo-wrap {
+        display: flex;
+        justify-content: left;
+        align-items: center;
+        margin: 20px 0;
+    }
+
+    strong {
+        color: #666; // Making important terms white
+    }
+}
+
+/* Fix for standard Modal Text visibility */
+.modal-view {
+    h2 {
+        color: #888;
+    }
+
+    .divider {
+        opacity: 0.3;
+    }
+
+    blockquote {
+        color: #888;
+        border-left-color: $accent;
+        margin: 20px 0;
+        font-size: 0.85rem;
+    }
+}
+
+.settings-layout {
+    .setting-group {
+        margin-bottom: 30px;
+
+        label {
+            display: block;
+            font-size: 0.75rem;
+            color: #666;
+            margin-bottom: 12px;
+            letter-spacing: 1px;
+        }
+    }
+
+    .unit-subtitle {
+        font-size: 0.7rem;
+        color: #888;
+        margin-bottom: 15px;
+    }
+
+    .matrix-options {
+        display: flex;
+        gap: 10px;
+
+        button {
+            flex: 1;
+            padding: 10px;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            color: #888;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+
+            &.active {
+                border-color: $accent;
+                color: $accent;
+                background: rgba($accent-raw, 0.05);
+            }
+        }
+    }
+
+    .theme-swatches {
+        display: flex;
+        gap: 15px;
+
+        .swatch {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 2px solid #222;
+            cursor: pointer;
+
+            &.active {
+                border-color: #fff;
+                transform: scale(1.1);
+            }
+
+            &.teal {
+                background: #00ffcc;
+            }
+
+            &.amber {
+                background: #ffbf00;
+            }
+
+            &.marooned {
+                background: #ff4d4d;
+            }
+        }
+    }
+
+    .meta-tag {
+        font-size: 0.6rem;
+        color: #888;
+        margin-bottom: 18px;
+    }
+
+    .value-readout {
+        font-size: 0.7rem;
+        color: #888;
+        margin-bottom: 18px;
+    }
+
+    .manual-footer {
+        font-size: 0.9rem;
+        color: #888;
+    }
+}
+
+// --- LOOP TOGGLE COMPONENT ---
+.loop-toggle-btn {
+    margin-top: auto;
+    height: 38px; // Sized to match the visual weight of the sliders
+    width: 100%;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #555;
+    font-family: $font-mono;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.2s ease;
+
+    svg {
+        width: 12px;
+        height: 12px;
+        opacity: 0.5;
+        transition: transform 0.3s ease;
+    }
+
+    &.active {
+        background: rgba($accent-raw, 0.08);
+        border-color: rgba($accent-raw, 0.5);
+        color: $accent;
+        box-shadow: 0 0 10px rgba($accent-raw, 0.1);
+
+        svg {
+            opacity: 1;
+            transform: rotate(180deg); // Visual cue for "cycling"
+        }
+    }
+
+    &:hover:not(.active) {
+        border-color: rgba($accent-raw, 0.3);
+        color: #888;
+    }
+}
+
+.waveform-box {
+    background: #000 !important; // Total black for high contrast
+    border: 1px solid rgba($accent-raw, 0.2);
+    padding: 10px !important;
+
+    .coord-display {
+        font-family: $font-mono;
+        font-size: 0.55rem;
+        display: flex;
+        gap: 10px;
+        color: rgba($accent-raw, 0.6);
+    }
+
+    .canvas-container {
+        position: relative;
+        width: 100%;
+        height: 72px; // A focused, rack-unit height
+        margin-top: 8px;
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: 2px;
+        overflow: hidden;
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+    }
+}
+
+.navigation-rail {
+    position: relative;
+    padding: 16px 0;
+    width: 100%;
+    pointer-events: none;
+
+    &.locked-mode {
+        .marker-visual {
+            opacity: 0.5;
+            filter: grayscale(1);
+        }
+
+        canvas {
+            opacity: 0.7;
+        }
+    }
+}
+
+.lock-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.15);
+    pointer-events: none; // Allows clicks to pass through if necessary
+
+    svg {
+        margin-bottom: 4px;
+        color: var(--accent-color);
+        opacity: 0.8;
+    }
+
+    span {
+        font-size: 8px;
+        letter-spacing: 1.5px;
+        color: var(--accent-color);
+    }
+}
+
+input[type="range"]:disabled {
+    cursor: not-allowed;
+
+    &::-webkit-slider-thumb {
+        background: #444 !important;
+        box-shadow: none !important;
+    }
+}
+
+.marker-lane {
+    position: absolute;
+    width: 100%;
+    height: 21px;
+    left: 0;
+    pointer-events: none;
+    overflow: visible;
+    transition: opacity 0.2s ease;
+
+    // The Rail Trigger: Light up when mouse intersects the lane
+    &:hover {
+        .marker-visual {
+            filter: brightness(1.4) drop-shadow(0 0 5px currentColor);
+        }
+
+        .marker-label {
+            color: #fff;
+            opacity: 1;
+        }
+    }
+
+    &.top {
+        top: 0;
+    }
+
+    &.bottom {
+        bottom: 0;
+    }
+
+    input[type="range"] {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        opacity: 0;
+        cursor: grab;
+
+        &:active {
+            cursor: grabbing;
+        }
+
+        pointer-events: auto;
+        z-index: 40;
+        // Prevent the browser from trying to select text while dragging markers
+        user-select: none;
+        touch-action: none;
+        -webkit-user-drag: none;
+    }
+
+    .marker-visual {
+        position: absolute;
+        pointer-events: none;
+        transform: translateX(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 20px;
+        z-index: 10;
+        transition: filter 0.2s ease; // Smooth light-up
+    }
+
+    .marker-label {
+        font-family: $font-mono;
+        font-size: 0.55rem;
+        color: rgba($accent-raw, 0.6);
+    }
+}
+
+/* Precise Edge Alignment */
+.in-marker {
+    color: $accent;
+
+    .marker-visual {
+        bottom: -2px; // Pulls the triangle DOWN to touch the canvas top edge
+    }
+
+    .triangle-down {
+        width: 0;
+        height: 0;
+        border-left: 7px solid transparent;
+        border-right: 7px solid transparent;
+        border-top: 10px solid $accent;
+        // No margin-top here so it sits flush
+    }
+}
+
+.out-marker {
+    color: $accent;
+
+    .marker-visual {
+        top: 6px; // Pulls the triangle UP to touch the canvas bottom edge
+    }
+
+    .triangle-up {
+        width: 0;
+        height: 0;
+        border-left: 7px solid transparent;
+        border-right: 7px solid transparent;
+        border-bottom: 10px solid $accent;
+    }
+}
+
+.canvas-container {
+    height: 70px;
+    background: #000;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    margin: 0; // Removed margin to ensure lanes can sit flush against it
+    pointer-events: auto;
+}
+
+.no-signal-placeholder {
+    height: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px dashed rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+
+    span {
+        font-size: 10px;
+        letter-spacing: 2px;
+        color: rgba(255, 255, 255, 0.3);
+        animation: pulse 2s infinite ease-in-out;
+    }
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 0.3;
+    }
+
+    50% {
+        opacity: 0.6;
+    }
+}
+
+.m-text-block {
+    //font-family: $font-mono;
+    font-size: 0.75rem;
+    color: #888;
+    margin-bottom: 18px;
+    padding: 20px 0;
+}
+
+.matrix-options {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-top: 20px;
+}

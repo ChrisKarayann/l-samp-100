@@ -1,0 +1,8 @@
+[build]
+# Use mold for faster linking on Linux (optional but recommended)
+# linker = "clang"
+# rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+[profile.release]
+lto = true
+codegen-units = 1

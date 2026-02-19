@@ -1,1 +1,38 @@
 /* You can add global styles to this file, and also import other style files */
+$font-main: 'Geist', sans-serif;
+$font-mono: 'Geist Mono', monospace;
+
+/* Reset default page spacing and allow transparent window backgrounds */
+html,
+body {
+    height: 100%;
+    margin: 0;
+    background: transparent;
+}
+* {
+    box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    outline: none !important;
+}
+
+:focus {
+  outline: none !important;
+}
+
+body,
+.sampler-shell {
+    font-family: $font-main;
+    font-weight: 300; // Light weight for that modern, airy feel
+    letter-spacing: -0.01em;
+}
+
+h1,
+h3,
+.key-label,
+.app-title,
+code {
+    font-family: $font-mono;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}

@@ -1,0 +1,31 @@
+{
+  "productName": "LSAMP-100",
+  "version": "1.0.0",
+  "identifier": "com.lsamp.conductor",
+  "build": {
+    "beforeDevCommand": "npm run start",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:4200",
+    "frontendDist": "../dist/midi-sampler/browser"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Liturgy Audio Tools | L-SAMP 100",
+        "width": 1252,
+        "height": 736,
+        "resizable": false,
+        "maximizable": false,
+        "decorations": true,
+        "alwaysOnTop": false,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true
+  }
+}

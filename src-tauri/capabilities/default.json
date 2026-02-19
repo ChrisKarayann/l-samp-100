@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "identifier": "default",
+  "description": "Capability configuration for LSAMP-100",
+  "local": true,
+  "windows": ["main"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-emit"
+  ]
+}

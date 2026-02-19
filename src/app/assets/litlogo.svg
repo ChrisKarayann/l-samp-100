@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="87.501038"
+   height="40"
+   viewBox="0 0 23.151308 10.583333"
+   version="1.1"
+   id="svg5"
+   inkscape:version="1.1.2 (0a00cf5339, 2022-02-04)"
+   sodipodi:docname="litlogo.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview7"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:document-units="mm"
+     showgrid="false"
+     inkscape:zoom="8.0811719"
+     inkscape:cx="43.063061"
+     inkscape:cy="57.417415"
+     inkscape:window-width="1920"
+     inkscape:window-height="1022"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1"
+     fit-margin-top="0"
+     fit-margin-left="0"
+     fit-margin-right="0"
+     fit-margin-bottom="0"
+     units="px"
+     height="40px"
+     showguides="true"
+     inkscape:guide-bbox="true">
+    <inkscape:grid
+       type="xygrid"
+       id="grid55"
+       originx="-50.640302"
+       originy="-133.20699" />
+    <sodipodi:guide
+       position="11.096334,5.2645131"
+       orientation="0,-1"
+       id="guide1050" />
+    <sodipodi:guide
+       position="11.44008,11.561761"
+       orientation="1,0"
+       id="guide1052" />
+  </sodipodi:namedview>
+  <defs
+     id="defs2">
+    <linearGradient
+       id="linearGradient166897"
+       inkscape:swatch="solid">
+      <stop
+         style="stop-color:#000000;stop-opacity:1;"
+         offset="0"
+         id="stop166895" />
+    </linearGradient>
+  </defs>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(-50.640388,-133.20704)">
+    <rect
+       style="display:none;fill:#808080;stroke-width:0.264583"
+       id="rect31"
+       width="210.36803"
+       height="297.71854"
+       x="-0.14457904"
+       y="-0.01382328" />
+    <rect
+       style="display:none;fill:#1f1339;fill-opacity:1;stroke-width:0.270274"
+       id="rect101"
+       width="127"
+       height="127"
+       x="42.333328"
+       y="89.958328"
+       inkscape:export-filename="/home/chris/Desktop/liturgy-logo-social.png"
+       inkscape:export-xdpi="47.730038"
+       inkscape:export-ydpi="47.730038" />
+    <text
+       xml:space="preserve"
+       style="font-size:5.37752px;line-height:1.25;font-family:'Didact Gothic';-inkscape-font-specification:'Didact Gothic';fill:#eeeeec;stroke-width:0.0370012"
+       x="55.081276"
+       y="139.65509"
+       id="text5355"
+       inkscape:export-filename="/home/chris/Desktop/liturgy-logo-social.png"
+       inkscape:export-xdpi="47.730038"
+       inkscape:export-ydpi="47.730038"
+       transform="scale(0.99657666,1.0034351)"><tspan
+         sodipodi:role="line"
+         id="tspan5353"
+         style="font-size:5.37752px;fill:#eeeeec;stroke-width:0.0370012"
+         x="55.081276"
+         y="139.65509">Lit</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:5.37752px;line-height:1.25;font-family:'Didact Gothic';-inkscape-font-specification:'Didact Gothic';fill:#eeeeec;stroke-width:0.0370012"
+       x="63.73912"
+       y="139.65829"
+       id="text5355-3"
+       inkscape:export-filename="/home/chris/Desktop/liturgy-logo-social.png"
+       inkscape:export-xdpi="47.730038"
+       inkscape:export-ydpi="47.730038"
+       transform="scale(0.99657666,1.0034351)"><tspan
+         sodipodi:role="line"
+         id="tspan5353-6"
+         style="font-size:5.37752px;fill:#eeeeec;stroke-width:0.0370012"
+         x="63.73912"
+         y="139.65829">rgy</tspan></text>
+    <path
+       style="fill:#d3d7cf;fill-opacity:1;stroke:#ffffff;stroke-width:0.0370178px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+       d="m 60.648243,137.62577 c 2.864458,0 2.864458,0 2.864458,0 l -1.432231,2.4876 z"
+       id="path163788"
+       inkscape:export-filename="/home/chris/Desktop/liturgy-logo-social.png"
+       inkscape:export-xdpi="47.730038"
+       inkscape:export-ydpi="47.730038" />
+  </g>
+</svg>
