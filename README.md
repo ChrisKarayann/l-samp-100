@@ -190,6 +190,10 @@ All UI elements — borders, glows, accents, oscilloscopes, waveforms — respon
 
 ---
 
+## Design Philosophy
+
+For a deep dive into the architectural and aesthetic principles of the L-SAMP 100, see [docs/DESIGN.md](docs/DESIGN.md).
+
 ## License
 
 This project is released under the [MIT License](LICENSE).
