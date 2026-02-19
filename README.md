@@ -1,4 +1,4 @@
-<![CDATA[<div align="center">
+<div align="center">
 
 # L-SAMP 100
 
@@ -9,7 +9,7 @@
 <!-- TODO: Replace with actual screenshot -->
 <!-- ![L-SAMP 100 Interface](docs/screenshot.png) -->
 
-[![Release](https://img.shields.io/github/v/release/user/lsamp-100?style=flat-square&color=00ffcc)](https://github.com/user/lsamp-100/releases)
+[![Release](https://img.shields.io/github/v/release/chriskarayann/l-samp-100?style=flat-square&color=00ffcc)](https://github.com/chriskarayann/l-samp-100/releases)
 [![License](https://img.shields.io/badge/license-MIT-333333?style=flat-square)](LICENSE)
 
 </div>
@@ -56,7 +56,7 @@ MP3 · WAV · OGG · FLAC
 
 ### Download
 
-Pre-built binaries for Linux, macOS, and Windows are available on the [Releases](https://github.com/user/lsamp-100/releases) page.
+Pre-built binaries for Linux, macOS, and Windows are available on the [Releases](https://github.com/chriskarayann/l-samp-100/releases) page.
 
 ### Build from Source
 
@@ -73,8 +73,8 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
 
 ```bash
 # Clone the repository
-git clone https://github.com/user/lsamp-100.git
-cd lsamp-100
+git clone https://github.com/chriskarayann/l-samp-100.git
+cd l-samp-100
 
 # Install frontend dependencies
 npm install
@@ -199,4 +199,3 @@ This project is released under the [MIT License](LICENSE).
 <div align="center">
 <sub>ALL SIGNAL PATHS NOMINAL</sub>
 </div>
-]]>
