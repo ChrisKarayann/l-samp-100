@@ -2,7 +2,7 @@
 name = "lsamp-100"
 version = "1.0.0"
 description = "Linear Sample Navigation Sincere Framework - Audio Sampler"
-authors = ["Chris"]
+authors = ["Chris <chris@liturgy.one>"]
 edition = "2021"
 rust-version = "1.70"
 build = "tauri-build/build.rs"
