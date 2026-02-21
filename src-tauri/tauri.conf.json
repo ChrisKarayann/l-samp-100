@@ -17,12 +17,12 @@
         "resizable": false,
         "maximizable": false,
         "decorations": true,
-        "alwaysOnTop": false,
-        "dragDropEnabled": true
+        "transparent": false,
+        "alwaysOnTop": false
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https://asset.localhost"
     }
   },
   "bundle": {
@@ -33,6 +33,11 @@
       "nsis",
       "dmg"
     ],
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
