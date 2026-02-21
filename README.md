@@ -25,7 +25,7 @@
 
 <!-- Or use a GIF: ![Demo](docs/demo.gif) -->
 
-> **🎬 Demo video placeholder** — A short recording of the boot sequence, pad triggering, BPM sync, and theme switching goes here.
+> <!--**🎬 Demo video placeholder** — A short recording of the boot sequence, pad triggering, BPM sync, and theme switching goes here. -->
 
 ---
 
