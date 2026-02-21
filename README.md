@@ -19,7 +19,7 @@
 <!-- TODO: Replace with your demo video link -->
 <!-- https://github.com/user/lsamp-100/assets/.../demo.mp4 -->
 <!-- Demo video -->
-<video src="https://github.com/ChrisKarayann/l-samp-100/tree/main/public/lsamp-demo.mp4" controls width="640">
+<video src="https://github.com/ChrisKarayann/l-samp-100/raw/main/public/lsamp-demo.mp4" controls width="640">
   Your browser does not support the video tag.
 </video>
 
