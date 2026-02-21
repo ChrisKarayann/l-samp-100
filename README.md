@@ -18,6 +18,11 @@
 
 <!-- TODO: Replace with your demo video link -->
 <!-- https://github.com/user/lsamp-100/assets/.../demo.mp4 -->
+<!-- Demo video -->
+<video src="assets/demo.mp4" controls width="640">
+  Your browser does not support the video tag.
+</video>
+
 <!-- Or use a GIF: ![Demo](docs/demo.gif) -->
 
 > **🎬 Demo video placeholder** — A short recording of the boot sequence, pad triggering, BPM sync, and theme switching goes here.
