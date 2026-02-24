@@ -391,9 +391,14 @@ fn apply_config(
 async fn audio_load(
     key: String,
     path: String,
+    // This tells Serde to look for 'cachedBpm' from the frontend
+    cached_bpm: Option<f32>, // Add this parameter to add bpm caching
     audio: State<'_, AudioEngine>,
 ) -> Result<LoadResult, String> {
-    audio.inner().load_sound(key, &path).await
+    // DIAGNOSTIC: This MUST show Some(val) for the optimization to work
+    println!("[Bridge] Request: {} | Cached BPM: {:?}", key, cached_bpm);
+    // audio.inner().load_sound(key, &path).await
+    audio.inner().load_sound(key, &path, cached_bpm).await // Replaced the above line with this
 }
 
 #[tauri::command]

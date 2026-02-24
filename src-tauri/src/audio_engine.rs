@@ -99,6 +99,8 @@ impl AudioEngine {
         })
     }
 
+    // REPLACED THIS BLOCK WITH THE ONE BELOW THIS ONE FOR OPTIMIZATION VIA BPM CACHING
+    /*
     pub async fn load_sound(&self, key: String, path: &str) -> Result<LoadResult, String> {
         let path_clone = path.to_string();
         let buffer = tokio::task::spawn_blocking(move || decode_file(&path_clone))
@@ -112,6 +114,45 @@ impl AudioEngine {
         };
         let mut state = self.state.lock().map_err(|e| e.to_string())?;
         state.sound_bank.insert(key, Arc::new(buffer));
+        Ok(result)
+    }
+    */
+    // END OF REPLACED BLOCK
+
+    pub async fn load_sound(
+        &self,
+        key: String,
+        path: &str,
+        cached_bpm: Option<f32>,
+    ) -> Result<LoadResult, String> {
+        let path_clone = path.to_string();
+
+        // 1. Decode the file.
+        // Note: decode_file still runs its internal 15s analysis,
+        // but we will override it immediately if we have a cache.
+        let skip = cached_bpm.is_some();
+        let mut buffer = tokio::task::spawn_blocking(move || decode_file(&path_clone, skip))
+            .await
+            .map_err(|e| e.to_string())??;
+
+        // 2. THE OVERRIDE: If the Bureau already knows the BPM, use it.
+        if let Some(bpm) = cached_bpm {
+            println!(
+                "[Inner Cosmos] Skipping Analysis for {}. Using Cache: {}",
+                key, bpm
+            );
+            buffer.bpm = bpm;
+        }
+
+        let result = LoadResult {
+            duration: buffer.duration,
+            bpm: buffer.bpm,
+            waveform: buffer.waveform.clone(),
+        };
+
+        let mut state = self.state.lock().map_err(|e| e.to_string())?;
+        state.sound_bank.insert(key, Arc::new(buffer));
+
         Ok(result)
     }
 
@@ -290,6 +331,19 @@ fn write_audio(data: &mut [f32], state_mutex: &Arc<Mutex<AudioEngineState>>, cha
         Err(_) => return,
     };
 
+    // THIS IS THE ADDED BLOCK FOR SILENT GUARD
+    // --- THE SILENT GUARD ---
+    // If no voices are active, zero out the buffer and rest the CPU.
+    if state.voices.is_empty() {
+        data.fill(0.0);
+        // Only clear if it's not already empty to avoid unnecessary map operations
+        if !state.levels.is_empty() {
+            state.levels.clear();
+        }
+        return;
+    }
+    // THIS IS THE ADDED BLOCK FOR SILENT GUARD - END
+
     // Clear levels at the start of the buffer processing
     state.levels.clear();
 
@@ -466,6 +520,8 @@ fn write_audio(data: &mut [f32], state_mutex: &Arc<Mutex<AudioEngineState>>, cha
     }
 }
 
+// REPLACED THIS DECODE BLOCK WITH THE ONE BELLOW THIS ONE FOR OPTIMIZATION VIA SAMPLE DECIMATION
+/*
 fn decode_file(path: &str) -> Result<AudioBuffer, String> {
     let src = File::open(path).map_err(|e| e.to_string())?;
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
@@ -531,7 +587,7 @@ fn decode_file(path: &str) -> Result<AudioBuffer, String> {
     // BPM Detection using stratum_dsp
     // We typically want a mono signal for detection.
     // PERFORMANCE FIX: Limit analysis to first 60 seconds (was 30) to catch tracks with longer intros.
-    let analysis_limit_samples = (sample_rate * 60) as usize;
+    let analysis_limit_samples = (sample_rate * 15) as usize; // Lowered from 60 to 15 furthermore
     let mono_data: Vec<f32> = pcm_data
         .chunks(channels as usize)
         .take(analysis_limit_samples)
@@ -567,6 +623,149 @@ fn decode_file(path: &str) -> Result<AudioBuffer, String> {
         for i in 0..400 {
             let start = i * step * (channels as usize);
             let end = (start + step * (channels as usize)).min(pcm_data.len());
+            if start >= pcm_data.len() {
+                break;
+            }
+
+            let mut peak = 0.0f32;
+            for j in start..end {
+                peak = peak.max(pcm_data[j].abs());
+            }
+            waveform.push(peak);
+        }
+    }
+
+    Ok(AudioBuffer {
+        data: pcm_data,
+        sample_rate,
+        channels,
+        duration,
+        bpm,
+        waveform,
+    })
+}
+// END OF REPLACED DECODE BLOCK
+*/
+
+fn decode_file(path: &str, skip_analysis: bool) -> Result<AudioBuffer, String> {
+    let src = File::open(path).map_err(|e| e.to_string())?;
+    let mss = MediaSourceStream::new(Box::new(src), Default::default());
+    let mut hint = Hint::new();
+    if let Some(ext) = Path::new(path).extension() {
+        hint.with_extension(&ext.to_string_lossy());
+    }
+
+    let probed = symphonia::default::get_probe()
+        .format(
+            &hint,
+            mss,
+            &symphonia::core::formats::FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
+        .map_err(|e| e.to_string())?;
+
+    let mut format_reader = probed.format;
+    let (track_id, codec_params) = {
+        let track = format_reader
+            .tracks()
+            .iter()
+            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+            .ok_or("No supported audio track found")?;
+        (track.id, track.codec_params.clone())
+    };
+
+    let mut decoder = symphonia::default::get_codecs()
+        .make(&codec_params, &DecoderOptions::default())
+        .map_err(|e| e.to_string())?;
+
+    let mut pcm_data = Vec::new();
+    let sample_rate = codec_params.sample_rate.unwrap_or(44100);
+    let channels = codec_params.channels.map(|c| c.count() as u16).unwrap_or(2);
+
+    loop {
+        let packet = match format_reader.next_packet() {
+            Ok(packet) => packet,
+            Err(symphonia::core::errors::Error::IoError(ref e))
+                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
+                break
+            }
+            Err(e) => return Err(e.to_string()),
+        };
+
+        if packet.track_id() != track_id {
+            continue;
+        }
+
+        let decoded = decoder.decode(&packet).map_err(|e| e.to_string())?;
+        let mut sample_buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
+        sample_buf.copy_interleaved_ref(decoded);
+        pcm_data.extend_from_slice(sample_buf.samples());
+    }
+
+    let duration = pcm_data.len() as f32 / (sample_rate as f32 * channels as f32);
+
+    if channels == 0 {
+        return Err("Invalid audio: 0 channels".to_string());
+    }
+
+    // ========================================================================
+    // BPM Detection Logic Gate
+    // ========================================================================
+    let mut bpm = 120.0; // Default placeholder if analysis is skipped
+
+    if !skip_analysis {
+        // We decimate by a factor of 4. At 48kHz, this gives us 12kHz—perfect for BPM.
+        let step = 4;
+        let analysis_limit_seconds = 15;
+        let max_frames = (sample_rate as usize * analysis_limit_seconds);
+
+        let mono_data: Vec<f32> = pcm_data
+            .chunks(channels as usize * step)
+            .take(max_frames / step)
+            .map(|chunk| {
+                let mut sum = 0.0;
+                for i in 0..channels as usize {
+                    sum += chunk[i];
+                }
+                sum / channels as f32
+            })
+            .collect();
+
+        let effective_sr = sample_rate / step as u32;
+        let mut config = AnalysisConfig::default();
+        config.bpm_resolution = 0.1;
+        config.enable_bpm_fusion = true;
+
+        let detected_bpm = analyze_audio(&mono_data, effective_sr, config)
+            .map(|res| res.bpm)
+            .unwrap_or(120.0);
+
+        bpm = if (detected_bpm - detected_bpm.round()).abs() < 0.1 {
+            detected_bpm.round()
+        } else {
+            detected_bpm
+        };
+
+        println!("[BackendBPM] Analysis complete for {}: {} BPM", path, bpm);
+    } else {
+        println!(
+            "[Inner Cosmos] BPM Analysis skipped for {} (Using Cache)",
+            path
+        );
+    }
+
+    // ========================================================================
+    // Waveform Generation (Always happens for UI)
+    // ========================================================================
+    let mut waveform = Vec::with_capacity(400);
+    if !pcm_data.is_empty() {
+        let step_wf = (pcm_data.len() / (channels as usize)) / 400;
+        let step_wf = if step_wf == 0 { 1 } else { step_wf };
+
+        for i in 0..400 {
+            let start = i * step_wf * (channels as usize);
+            let end = (start + step_wf * (channels as usize)).min(pcm_data.len());
             if start >= pcm_data.len() {
                 break;
             }

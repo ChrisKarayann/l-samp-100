@@ -62,6 +62,51 @@ export class Audio {
     const poll = async () => {
       if (!this.levelPollingActive) return;
 
+      // --- THE POLLING BRAKE ---
+      // Only bother the Rust engine if we know pads are active.
+      // If empty, we wait a bit longer before checking again (Lower Frequency).
+      if (this.activePads.size > 0) {
+        const response = await this.tauriBridge.audioGetLevels();
+        this.latestLevels = response.data;
+        this.levelData$.next(response.data);
+
+        const backendActive = new Set(response.active_keys);
+
+        // Sync logic remains the same
+        this.activePads.forEach((key) => {
+          if (!backendActive.has(key)) {
+            this.activePads.delete(key);
+            this.stoppingPads.delete(key);
+            this.padFinished$.next(key);
+          }
+        });
+
+        backendActive.forEach(key => {
+          if (!this.activePads.has(key)) {
+            this.activePads.add(key);
+          }
+        });
+
+        // While active, use High-Intensity (60fps) for smooth visualizers
+        requestAnimationFrame(poll);
+      } else {
+        // If silent, check again in 100ms (Low-Intensity/Idle)
+        // This saves massive IPC overhead when the app is just sitting there.
+        setTimeout(() => poll(), 500);
+      }
+    };
+    poll();
+  }
+
+  // REPLACED BLOCK FOR OPTIMIZATION
+  /*
+  private startLevelPolling() {
+    if (this.levelPollingActive) return;
+    this.levelPollingActive = true;
+
+    const poll = async () => {
+      if (!this.levelPollingActive) return;
+
       const response = await this.tauriBridge.audioGetLevels();
       this.latestLevels = response.data;
       this.levelData$.next(response.data);
@@ -90,6 +135,8 @@ export class Audio {
     };
     poll();
   }
+    */
+  // END REPLACED BLOCK FOR OPTIMIZATION
 
   // --- 1. THE EYE (ANALYSIS) ---
   getLevel(key: string): number {
@@ -101,6 +148,9 @@ export class Audio {
   }
 
   // --- 2. LOADING & BUFFERING ---
+
+  // REPLACED BLOCK FOR OPTIMIZATION
+  /*
   async loadSound(key: string, filePath: string): Promise<boolean> {
     try {
       this.loadingProgress$.next({ key, progress: 0 });
@@ -131,6 +181,51 @@ export class Audio {
       }
 
       console.log(`[AudioService] ${key} buffered: ${duration}s, Detected BPM: ${bpm}`);
+      setTimeout(() => this.loadingProgress$.next({ key, progress: -1 }), 500);
+      return true;
+    } catch (err) {
+      console.error(`[RustAudio] Load failed:`, err);
+      this.loadingProgress$.next({ key, progress: -1 });
+      return false;
+    }
+  }
+  */
+
+  /**
+ * Updated loadSound to support cached BPM from persistence
+ */
+  async loadSound(key: string, filePath: string, cachedBpm?: number): Promise<boolean> {
+    try {
+      this.loadingProgress$.next({ key, progress: 0 });
+
+      let finalPath = filePath;
+      if (filePath.startsWith('music-app://harbor/')) {
+        const fileName = filePath.substring('music-app://harbor/'.length);
+        finalPath = await this.tauriBridge.getFilePath(fileName);
+      } else if (filePath.startsWith('music-app://system')) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        const url = new URL(filePath);
+        finalPath = url.searchParams.get('path') || filePath;
+      }
+
+      this.loadingProgress$.next({ key, progress: 20 });
+
+      // --- THE FIX: Pass the cachedBpm through to the bridge ---
+      const loadResult = await this.tauriBridge.audioLoad(key, finalPath, cachedBpm);
+
+      console.log(`[AudioService] Raw LoadResult for ${key}:`, loadResult);
+
+      const { duration, bpm, waveform } = loadResult;
+      this.loadingProgress$.next({ key, progress: 100 });
+
+      this.soundInfo.set(key, { duration, bpm, waveform });
+
+      if (!this.trimOutSettings.has(key)) {
+        this.trimOutSettings.set(key, duration);
+      }
+
+      console.log(`[AudioService] ${key} buffered: ${duration}s, BPM: ${bpm} ${cachedBpm ? '(from cache)' : '(analyzed)'}`);
+
       setTimeout(() => this.loadingProgress$.next({ key, progress: -1 }), 500);
       return true;
     } catch (err) {
@@ -261,9 +356,20 @@ export class Audio {
     }
   }
 
-  stopAllSounds() {
-    this.activePads.forEach((key) => this.stopSoundWithFade(key));
+  async stopAllSounds(keysOverride?: string[]) {
+    const keysToStop = keysOverride || Array.from(this.activePads);
+
+    for (const key of keysToStop) {
+      const { release } = this.getFadeParams(key);
+      // We send the stop, but we don't necessarily need to track 
+      // the fade-out if the user wanted a GLOBAL STOP.
+      await this.tauriBridge.audioStop(key.toUpperCase(), release);
+    }
+
+    // Clear everything internal
     this.activePads.clear();
+    this.stoppingPads.clear(); // <--- Clear the "ghost" timers
+    this.loopToOneshotTransitions.clear();
   }
 
   // --- 5. PARAMETER CALIBRATION ---
@@ -367,15 +473,23 @@ export class Audio {
     const wasLooping = this.loopSettings.get(key) ?? false;
     this.loopSettings.set(key, state);
 
-    // If toggling FROM loop TO oneshot while playing, capture the current position
+    // If toggling FROM loop TO oneshot while playing, capture position and clamp release
     if (wasLooping && !state && this.activePads.has(key)) {
       const startTime = this.startTimes.get(key);
+      const remainingInLoop = this.getRemainingTime(key);
+
+      // Get parameters from your actual Maps
+      const { in: startPoint, out: endPoint } = this.getTrimParams(key);
+      const { attack, release: targetRelease } = this.getFadeParams(key);
+
+      // THE CLAMP: Ensure fade doesn't outlive the sample iteration
+      const clampedRelease = Math.min(remainingInLoop, targetRelease);
+
       if (startTime !== undefined) {
-        const { in: startPoint, out: endPoint } = this.getTrimParams(key);
         const originalSliceDuration = Math.max(0, endPoint - startPoint);
+        let effectiveSliceDuration = originalSliceDuration;
 
         // BPM Warp Calculation
-        let effectiveSliceDuration = originalSliceDuration;
         if (this.getSyncState(key)) {
           const sampleBpm = this.getBpm(key);
           if (sampleBpm > 0 && this.masterBpm > 0) {
@@ -386,16 +500,30 @@ export class Audio {
         const elapsedSinceTrigger = (Date.now() / 1000) - startTime;
         const loopElapsed = elapsedSinceTrigger % effectiveSliceDuration;
 
-        // Set a virtual start time as if we just started playing from this point in the loop
+        // Virtual start time for One-shot logic
         const adjustedStartTime = (Date.now() / 1000) - loopElapsed;
         this.loopToOneshotTransitions.set(key, adjustedStartTime);
+
+        // --- SYNC TO RUST WITH CLAMPED RELEASE ---
+        this.tauriBridge.audioUpdateParams(key, {
+          volume: this.gainSettings.get(key) ?? 0.8,
+          attack: attack,
+          release: clampedRelease, // Use the smaller value (remaining time vs setting)
+          looping: false,
+          startTime: startPoint,
+          endTime: endPoint,
+          sync: this.getSyncState(key),
+          sample_bpm: this.getBpm(key)
+        });
       }
     } else if (state) {
-      // If toggling back to loop, clear the transition tracking
+      // Toggling back to loop: clear transition and sync normally
       this.loopToOneshotTransitions.delete(key);
+      this.syncParamsToRust(key);
+    } else {
+      // Just a standard setting change while not playing
+      this.syncParamsToRust(key);
     }
-
-    this.syncParamsToRust(key);
   }
 
   getLoopState(key: string): boolean {

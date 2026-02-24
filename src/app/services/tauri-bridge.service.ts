@@ -61,9 +61,11 @@ export class TauriBridgeService implements OnDestroy {
     throw new Error('Tauri initialization timeout');
   }
 
+  //  REPLACED THIS WITH THE ONE BELOW
   /**
    * Initialize all Tauri event listeners
    */
+  /*
   private async initializeEventListeners(): Promise<void> {
     try {
       // Dynamically import Tauri API
@@ -121,6 +123,63 @@ export class TauriBridgeService implements OnDestroy {
       console.error('[TauriBridge] Failed to initialize listeners:', error);
     }
   }
+  */
+  // REPLACED BY THE ONE BELOW
+
+  /**
+   * Initialize all Tauri event listeners
+   * Refactored for Zoneless: Removed NgZone wrappers to eliminate "Social Noise"
+   */
+  private async initializeEventListeners(): Promise<void> {
+    try {
+      // Dynamically import Tauri API
+      const coreModule = await import('@tauri-apps/api/core');
+      const eventModule = await import('@tauri-apps/api/event');
+
+      this.invoke = coreModule.invoke;
+      this.listen = eventModule.listen;
+      this.tauriReady = true;
+
+      // Setup native keyboard listeners for QWER ASDF ZXCV
+      this.setupKeyboardListeners();
+
+      // Listen for keyboard triggers from Rust backend (Pads)
+      const keyTriggerUnlisten = await this.listen('key-triggered', (event: any) => {
+        // Direct emission: Zoneless Signals will detect this change automatically
+        this.onKeyTriggered.next(event.payload);
+      });
+
+      // Listen for the new global-key-press from rdev (Background)
+      const globalKeyPressUnlisten = await this.listen('global-key-press', (event: any) => {
+        const key = event.payload;
+        if (key === 'SPACE') {
+          this.onGlobalStop.next();
+        } else {
+          this.onKeyTriggered.next(key);
+        }
+      });
+
+      // Listen for global stop
+      const globalStopUnlisten = await this.listen('global-stop', () => {
+        this.onGlobalStop.next();
+      });
+
+      // Listen for config updates from Rust backend
+      const configUnlisten = await this.listen('apply-config', (event: any) => {
+        this.onApplyConfig.next(event.payload);
+      });
+
+      // Store unlisten functions for cleanup
+      this.listeners = [
+        keyTriggerUnlisten,
+        globalKeyPressUnlisten,
+        globalStopUnlisten,
+        configUnlisten
+      ];
+    } catch (error) {
+      console.error('[TauriBridge] Failed to initialize listeners:', error);
+    }
+  }
 
   /**
    * Setup native keyboard listeners for gameplay keys
@@ -132,23 +191,18 @@ export class TauriBridgeService implements OnDestroy {
 
     window.addEventListener('keydown', (event) => {
       if (!this.listenerActive) return;
-      const key = event.key.toLowerCase();
-      console.log('[TauriBridge] Keydown event:', key);
+      const key = event.key.toLowerCase(); // Don't toLowerCase yet for the space check
 
       if (key === ' ') {
-        // Global SPACE key stop
         console.log('[TauriBridge] SPACE key detected - global stop');
         event.preventDefault();
-        this.ngZone.run(() => {
-          this.onGlobalStop.next();
-        });
-      } else if (gameKeys.includes(key)) {
-        // Game key pressed
-        console.log('[TauriBridge] Game key detected:', key.toUpperCase());
+        // No ngZone.run needed. Direct and Sincere.
+        this.onGlobalStop.next();
+      } else if (gameKeys.includes(key.toLowerCase())) {
+        const normalizedKey = key.toUpperCase();
+        console.log('[TauriBridge] Game key detected:', normalizedKey);
         event.preventDefault();
-        this.ngZone.run(() => {
-          this.onKeyTriggered.next(key.toUpperCase());
-        });
+        this.onKeyTriggered.next(normalizedKey);
       }
     });
   }
@@ -274,10 +328,29 @@ export class TauriBridgeService implements OnDestroy {
    * Load and decode an audio file in the Rust engine
    * @returns Duration and downsampled waveform of the loaded file
    */
+
+  // REPLACED THIS BLOCK WITH THE ONE BELOW THIS ONE FOR OPTIMIZATION VIA BPM CACHING
+  /*
   async audioLoad(key: string, path: string): Promise<{ duration: number, bpm: number, waveform: number[] }> {
     try {
       await this.waitForReady();
       return await this.invoke('audio_load', { key, path });
+    } catch (error) {
+      console.error(`[TauriBridge] Failed to load audio ${key}:`, error);
+      throw error;
+    }
+  }
+  */
+
+  async audioLoad(key: string, path: string, cachedBpm?: number): Promise<{ duration: number, bpm: number, waveform: number[] }> {
+    try {
+      await this.waitForReady();
+      // We pass cached_bpm (snake_case) to match the Rust Option<f32>
+      return await this.invoke('audio_load', {
+        key,
+        path,
+        cachedBpm: cachedBpm ?? null
+      });
     } catch (error) {
       console.error(`[TauriBridge] Failed to load audio ${key}:`, error);
       throw error;

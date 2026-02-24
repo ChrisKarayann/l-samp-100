@@ -244,13 +244,22 @@ export class App implements OnInit, OnDestroy {
     // Key triggered listener
     this.tauriBridge.onKeyTriggered.subscribe((key: string) => {
       const normalizedKey = key.toUpperCase();
+
       if (!this.pads().includes(normalizedKey)) return;
 
       if (this.processingKeys.has(normalizedKey)) return;
       this.processingKeys.add(normalizedKey);
 
       const wasPlaying = this.playingPads().has(normalizedKey);
+
       this.audio.toggleSound(normalizedKey).then(isNowPlaying => {
+
+        // --- THE RE-WAKE LOGIC ---
+        if (isNowPlaying && this.animationId === 0) {
+          this.startVisualizer();
+        }
+        // -------------------------
+
         this.activeKey.set(normalizedKey);
 
         setTimeout(() => {
@@ -285,9 +294,18 @@ export class App implements OnInit, OnDestroy {
     });
 
     // Global stop listener (SPACE key)
-    this.tauriBridge.onGlobalStop.subscribe(() => {
-      this.audio.stopAllSounds();
+    this.tauriBridge.onGlobalStop.subscribe(async () => {
+      const currentPlaying = Array.from(this.playingPads());
+      const currentFading = Array.from(this.fadingPads());
+
+      // Combine both to ensure nothing is left behind in Rust
+      const allActive = [...new Set([...currentPlaying, ...currentFading])];
+
+      await this.audio.stopAllSounds(allActive);
+
+      // CRITICAL: Wipe both signals to trigger the "Final Sweep" in startVisualizer
       this.playingPads.set(new Set());
+      this.fadingPads.set(new Set());
       this.activeKey.set(null);
     });
 
@@ -516,6 +534,8 @@ export class App implements OnInit, OnDestroy {
   }
 
   // --- 6. VISUAL FEEDBACK & THE EYE ---
+  // REPLACE THIS WITH THE BLOCK BELOW FOR PERFORMANCE OPTIMIZATION
+  /*
   startVisualizer() {
     // Keep canvas rendering outside Angular's change detection for performance
     this.zone.runOutsideAngular(() => {
@@ -569,6 +589,95 @@ export class App implements OnInit, OnDestroy {
       draw();
     });
   }
+  */
+  // END OF BLOCK TO REPLACE
+
+  startVisualizer() {
+    // 1. Prevent multiple loops from running simultaneously
+    if (this.animationId) return;
+
+    this.zone.runOutsideAngular(() => {
+      const draw = () => {
+        const activeKeys = this.playingPads();
+        const fadingKeys = this.fadingPads();
+
+        // 2. THE GATEKEEPER: If no pads are active or fading, kill the loop to save 30% CPU
+        // THE REFINED GATEKEEPER
+        if (activeKeys.size === 0 && fadingKeys.size === 0) {
+          // Before we kill the loop, we do one last cleanup of the UI
+          this.pads().forEach(key => {
+            const canvas = document.getElementById(`osc-${key}`) as HTMLCanvasElement;
+            const ctx = canvas?.getContext('2d');
+            if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const timerEl = document.getElementById(`timer-${key}`);
+            if (timerEl) timerEl.innerText = '00:00.0';
+          });
+
+          this.animationId = 0; // The Eye closes, but the room is clean
+          return;
+        }
+
+        this.pads().forEach(key => {
+          const isCurrentlyActive = activeKeys.has(key) || fadingKeys.has(key);
+
+          // Timer Update Logic
+          const timerEl = document.getElementById(`timer-${key}`);
+          if (timerEl) {
+            if (isCurrentlyActive) {
+              const remainingTime = this.audio.getRemainingTime(key);
+              timerEl.innerText = this.formatTime(key, remainingTime);
+            } else {
+              // Reset timer display if pad is dead
+              timerEl.innerText = '00:00.0';
+            }
+          }
+
+          // Oscilloscope Drawing Logic
+          const canvas = document.getElementById(`osc-${key}`) as HTMLCanvasElement;
+          const ctx = canvas?.getContext('2d');
+          if (!ctx) return;
+
+          if (isCurrentlyActive) {
+            const samples = this.audio.getSamples(key);
+            const isPlaying = activeKeys.has(key);
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = isPlaying ? this.accentColor() : 'rgba(255,255,255,0.1)';
+
+            ctx.beginPath();
+            const midY = canvas.height / 2;
+            const width = canvas.width;
+
+            if (isPlaying && samples.length > 0) {
+              const sliceWidth = width / (samples.length - 1);
+              for (let i = 0; i < samples.length; i++) {
+                const x = i * sliceWidth;
+                const v = samples[i] * 0.8;
+                const y = midY + (v * midY);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+              }
+            } else {
+              ctx.moveTo(0, midY);
+              ctx.lineTo(width, midY);
+            }
+            ctx.stroke();
+          } else {
+            // If the pad just stopped, clear its canvas one last time
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+          }
+        });
+
+        this.animationId = requestAnimationFrame(draw);
+      };
+
+      // Start the first frame
+      this.animationId = requestAnimationFrame(draw);
+    });
+  }
+
 
   getDynamicEnvelopePath(attack: number, release: number): string {
     if (!this.selectedPad()) return 'M 0 12 L 10 2 L 30 2 L 40 12';
@@ -762,7 +871,8 @@ export class App implements OnInit, OnDestroy {
           url = `music-app://harbor/${rawFile}`;
         }
 
-        this.audio.loadSound(key, url).then((success: boolean) => {
+        // Tried to load saved bpm also, but it doesn't work
+        this.audio.loadSound(key, url, meta.bpm).then((success: boolean) => {
           if (success) {
             this.loadedPads.update(set => {
               const n = new Set(set);
