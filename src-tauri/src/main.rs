@@ -79,6 +79,19 @@ fn main() {
         .setup(|app| {
             let app_handle = app.handle().clone();
             start_background_listener(app_handle);
+
+            #[cfg(target_os = "macos")]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    // macOS titlebar is ~28px. We add it to the base 736px height
+                    // to ensure the internal webview area remains exactly 736px.
+                    let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
+                        width: 1252.0,
+                        height: 764.0,
+                    }));
+                }
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())
