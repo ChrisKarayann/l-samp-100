@@ -85,8 +85,9 @@
     <section class="grid">
       <div *ngFor="let p of pads()" class="pad-cell" [class.active]="activeKey() === p"
         [class.playing]="playingPads().has(p)" [style.transition-duration]="getTransitionDuration(p)"
-        [class.selected]="selectedPad() === p" [class.restricted]="isCommunityBuild() && !['Q', 'W', 'E', 'R'].includes(p)"
-        (click)="selectPad(p)" [title]="(isCommunityBuild() && !['Q', 'W', 'E', 'R'].includes(p)) ? 'Pad available in L-SAMP 100 Pro' : 'Select Pad [ ' + p + ' ]'">
+        [class.selected]="selectedPad() === p"
+        [class.restricted]="isCommunityBuild() && !['Q', 'W', 'E', 'R'].includes(p)" (click)="selectPad(p)"
+        [title]="(isCommunityBuild() && !['Q', 'W', 'E', 'R'].includes(p)) ? 'Pad available in L-SAMP 100 Pro' : 'Select Pad [ ' + p + ' ]'">
 
         <div class="pad-header">
           <input type="text" [ngModel]="padNames()[p]" (focus)="handleLabelFocus(p, $any($event))"
@@ -428,7 +429,7 @@
           </div>
           <div class="credit-row">
             <span class="role">TECHNICAL COLLABORATION</span>
-            <span class="entity">GEMINI 3.0</span>
+            <span class="entity">ANTIGRAVITY AI AGENTS</span>
           </div>
         </div>
 
