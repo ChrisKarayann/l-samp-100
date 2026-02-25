@@ -49,6 +49,7 @@ export class App implements OnInit, OnDestroy {
   playingPads = signal<Set<string>>(new Set());
   fadingPads = signal<Set<string>>(new Set());
   showMenuDropdown = signal<boolean>(false);
+  isCommunityBuild = signal<boolean>(false);
 
   loadingProgress = signal<Map<string, number>>(new Map());
 
@@ -201,6 +202,8 @@ export class App implements OnInit, OnDestroy {
 
   // --- 2. LIFECYCLE & INITIALIZATION ---
   async ngOnInit() {
+    this.isCommunityBuild.set(await this.tauriBridge.getIsCommunityBuild());
+
     const savedColor = localStorage.getItem('lsamp_theme') || '#00ffcc';
     this.setTheme(savedColor);
 
@@ -246,6 +249,7 @@ export class App implements OnInit, OnDestroy {
       const normalizedKey = key.toUpperCase();
 
       if (!this.pads().includes(normalizedKey)) return;
+      if (this.isCommunityBuild() && !['Q', 'W', 'E', 'R'].includes(normalizedKey)) return;
 
       if (this.processingKeys.has(normalizedKey)) return;
       this.processingKeys.add(normalizedKey);
@@ -351,6 +355,8 @@ export class App implements OnInit, OnDestroy {
   }
 
   loadFromHarbor(fileName: string, targetPad: string) {
+    if (this.isCommunityBuild() && !['Q', 'W', 'E', 'R'].includes(targetPad)) return;
+
     if (!fileName) {
       this.fileTruth.update(rec => {
         const nr = { ...rec };
@@ -410,6 +416,8 @@ export class App implements OnInit, OnDestroy {
   }
 
   async triggerExternalFileSelection(key: string) {
+    if (this.isCommunityBuild() && !['Q', 'W', 'E', 'R'].includes(key)) return;
+
     const realPath = await this.tauriBridge.selectFile();
     if (realPath) {
       const fileName = realPath.split(/[/\\]/).pop() || 'Unknown File';
@@ -753,6 +761,8 @@ export class App implements OnInit, OnDestroy {
   }
 
   selectPad(padKey: string) {
+    if (this.isCommunityBuild() && !['Q', 'W', 'E', 'R'].includes(padKey)) return;
+
     this.selectedPad.set(padKey);
     this.syncMarkerVariables();
     setTimeout(() => {

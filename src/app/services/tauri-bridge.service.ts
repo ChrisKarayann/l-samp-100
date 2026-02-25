@@ -212,6 +212,19 @@ export class TauriBridgeService implements OnDestroy {
   // ========================================================================
 
   /**
+   * Check if this is the restricted community build
+   */
+  async getIsCommunityBuild(): Promise<boolean> {
+    try {
+      await this.waitForReady();
+      return await this.invoke('get_is_community_build');
+    } catch (error) {
+      console.error('[TauriBridge] Failed to check community build status:', error);
+      return false; // Default to false (Pro) if check fails
+    }
+  }
+
+  /**
    * Get all audio files from the harbor directory
    */
   async getHarborFiles(): Promise<string[]> {

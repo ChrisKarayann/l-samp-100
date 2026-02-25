@@ -29,6 +29,16 @@
 
 ---
 
+## Community Edition vs. Pro
+
+This repository defaults to building the **Community Edition** of L-SAMP 100. It is fully functional, free, and open-source for educational and tinkering purposes, but it restricts playback to the first row of **4 pads** (`Q W E R`). 
+
+If you want the full, unrestricted 12-pad experience instantly without compiling, you can support the project **L-SAMP 100 Pro** on [itch.io (Link Coming Soon)](#).
+
+*Note to the curious: All signal constraints are soft-coded deeply within the native architecture. Sometimes, reading the source is its own reward.*
+
+---
+
 ## What is this?
 
 L-SAMP 100 is a **dedicated keyboard sampler** designed for real-time audio triggering. Load audio files onto 12 pads, trigger them with your QWERTY keyboard (Q W E R / A S D F / Z X C V), shape the sound with attack/release envelopes, and synchronize everything to a master clock.

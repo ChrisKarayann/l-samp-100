@@ -718,7 +718,7 @@ fn decode_file(path: &str, skip_analysis: bool) -> Result<AudioBuffer, String> {
         // We decimate by a factor of 4. At 48kHz, this gives us 12kHz—perfect for BPM.
         let step = 4;
         let analysis_limit_seconds = 15;
-        let max_frames = (sample_rate as usize * analysis_limit_seconds);
+        let max_frames = sample_rate as usize * analysis_limit_seconds;
 
         let mono_data: Vec<f32> = pcm_data
             .chunks(channels as usize * step)

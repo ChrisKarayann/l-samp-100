@@ -42,6 +42,8 @@ pub struct AppConfig {
     master_volume: f32,
 }
 
+pub const IS_COMMUNITY_BUILD: bool = false; // I am just sitting here
+
 // ============================================================================
 // STATE MANAGEMENT
 // ============================================================================
@@ -60,6 +62,7 @@ fn main() {
         })
         .manage(AudioEngine::new().expect("Failed to initialize audio engine"))
         .invoke_handler(tauri::generate_handler![
+            get_is_community_build,
             get_harbor_files,
             open_audio_folder,
             get_audio_file,
@@ -216,6 +219,11 @@ fn scan_harbor(dir_path: &PathBuf) -> Result<Vec<String>, String> {
 async fn get_harbor_files(app_handle: AppHandle) -> Result<Vec<String>, String> {
     let harbor_path = get_audio_harbor(&app_handle)?;
     scan_harbor(&harbor_path)
+}
+
+#[tauri::command]
+fn get_is_community_build() -> bool {
+    IS_COMMUNITY_BUILD
 }
 
 #[tauri::command]
@@ -408,6 +416,10 @@ async fn audio_load(
     cached_bpm: Option<f32>, // Add this parameter to add bpm caching
     audio: State<'_, AudioEngine>,
 ) -> Result<LoadResult, String> {
+    if IS_COMMUNITY_BUILD && !["Q", "W", "E", "R"].contains(&key.as_str()) {
+        println!("[Bridge] BLOCKED Community Build Request: {}", key);
+        return Err("This pad is restricted in the Community Build.".to_string());
+    }
     // DIAGNOSTIC: This MUST show Some(val) for the optimization to work
     println!("[Bridge] Request: {} | Cached BPM: {:?}", key, cached_bpm);
     // audio.inner().load_sound(key, &path).await
@@ -420,6 +432,10 @@ async fn audio_play(
     params: crate::audio_engine::PlayParams,
     audio: State<'_, AudioEngine>,
 ) -> Result<(), String> {
+    if IS_COMMUNITY_BUILD && !["Q", "W", "E", "R"].contains(&key.as_str()) {
+        println!("[AudioPlay] BLOCKED Community Build Play: {}", key);
+        return Err("This pad is restricted in the Community Build.".to_string());
+    }
     println!("[AudioPlay] Key: {}, Params: {:?}", key, params);
     audio.inner().play_sound(key, params)
 }

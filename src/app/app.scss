@@ -361,7 +361,17 @@ body {
         inset 0 0 15px rgba(0, 0, 0, 0.5),
         0 4px 6px rgba(0, 0, 0, 0.3);
 
-    transition: transform 0.05s ease, box-shadow 0.05s ease;
+    transition: transform 0.05s ease, box-shadow 0.05s ease, opacity 0.3s ease, filter 0.3s ease;
+
+    &.restricted {
+        opacity: 0.15;
+        cursor: not-allowed;
+        filter: grayscale(100%);
+        pointer-events: auto; /* Allow hover for tooltip, block clicks in TS */
+        
+        .key-label { opacity: 0.2; }
+        .pad-name-input { pointer-events: none; }
+    }
 
     &:active,
     &.active {
