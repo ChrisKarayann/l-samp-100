@@ -400,7 +400,7 @@ export class App implements OnInit, OnDestroy {
     if (success) {
       // Hydrate BPM from backend detection
       const detectedBpm = this.audio.getBpm(targetPad);
-
+      // console.log(`[App] Hydrating ${targetPad} with BPM: ${detectedBpm}`);
 
       if (detectedBpm > 0) {
         this.updatePadBpm(targetPad, detectedBpm);
@@ -471,7 +471,7 @@ export class App implements OnInit, OnDestroy {
   updatePadBpm(key: string, bpmVal: string | number) {
     const bpm = typeof bpmVal === 'string' ? parseFloat(bpmVal) : bpmVal;
     if (!isNaN(bpm) && bpm >= 0) {
-
+      // console.log(`[App] updatePadBpm(${key}, ${bpm}) - Updating record`);
       this.padBpm.update(rec => ({ ...rec, [key]: bpm }));
       this.audio.setBpm(key, bpm); // Propagate to audio service
       this.savePadMetadata(key);

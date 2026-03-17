@@ -132,8 +132,7 @@ export class Audio {
 
       // --- THE FIX: Pass the cachedBpm through to the bridge ---
       const loadResult = await this.tauriBridge.audioLoad(key, finalPath, cachedBpm);
-
-
+      // console.log(`[AudioService] Raw LoadResult for ${key}:`, loadResult);
 
       const { duration, bpm, waveform } = loadResult;
       this.loadingProgress$.next({ key, progress: 100 });
@@ -144,7 +143,7 @@ export class Audio {
         this.trimOutSettings.set(key, duration);
       }
 
-
+      // console.log(`[AudioService] ${key} buffered: ${duration}s, BPM: ${bpm} ${cachedBpm ? '(from cache)' : '(analyzed)'}`);
 
       setTimeout(() => this.loadingProgress$.next({ key, progress: -1 }), 500);
       return true;
@@ -339,7 +338,7 @@ export class Audio {
   getBpm(key: string): number {
     const info = this.soundInfo.get(key);
     const bpm = info?.bpm ?? 120;
-
+    // console.log(`[AudioService] getBpm(${key}) -> ${bpm} (exists: ${!!info})`);
     return bpm;
   }
 

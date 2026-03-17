@@ -154,6 +154,7 @@ impl AudioEngine {
 
         // Override with cached BPM if available
         if let Some(bpm) = cached_bpm {
+            // println!("[Inner Cosmos] Skipping Analysis for {}. Using Cache: {}", key, bpm);
             buffer.bpm = bpm;
         }
 
@@ -614,6 +615,7 @@ fn decode_file(path: &str, skip_analysis: bool) -> Result<AudioBuffer, String> {
         };
 
     } else {
+        // println!("[Inner Cosmos] BPM Analysis skipped for {} (Using Cache)", path);
     }
 
     // ========================================================================

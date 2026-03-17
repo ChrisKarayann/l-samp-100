@@ -123,20 +123,20 @@ export class TauriBridgeService implements OnDestroy {
    */
   private setupKeyboardListeners(): void {
     const gameKeys = ['q', 'w', 'e', 'r', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v', ' '];
-
+    // console.log('[TauriBridge] Keyboard listeners initialized for:', gameKeys);
 
     window.addEventListener('keydown', (event) => {
       if (!this.listenerActive) return;
       const key = event.key.toLowerCase(); // Don't toLowerCase yet for the space check
 
       if (key === ' ') {
-
+        // console.log('[TauriBridge] SPACE key detected - global stop');
         event.preventDefault();
         // No ngZone.run needed. Direct and Sincere.
         this.onGlobalStop.next();
       } else if (gameKeys.includes(key.toLowerCase())) {
         const normalizedKey = key.toUpperCase();
-
+        // console.log('[TauriBridge] Game key detected:', normalizedKey);
         event.preventDefault();
         this.onKeyTriggered.next(normalizedKey);
       }
@@ -167,7 +167,7 @@ export class TauriBridgeService implements OnDestroy {
     try {
       await this.waitForReady();
       const files = (await this.invoke('get_harbor_files')) as string[];
-
+      // console.log('[TauriBridge] Harbor files loaded:', files.length);
       return files;
     } catch (error) {
       console.error('[TauriBridge] Failed to get harbor files:', error);
@@ -182,7 +182,7 @@ export class TauriBridgeService implements OnDestroy {
     try {
       await this.waitForReady();
       await this.invoke('open_audio_folder');
-
+      // console.log('[TauriBridge] Audio folder opened');
     } catch (error) {
       console.error('[TauriBridge] Failed to open audio folder:', error);
     }
@@ -245,7 +245,7 @@ export class TauriBridgeService implements OnDestroy {
       await this.waitForReady();
       // Invoke Rust command to read the file and return as bytes
       const bytes = await this.invoke('get_audio_file', { fileName });
-
+      // console.log('[TauriBridge] Raw bytes response:', bytes, 'Type:', typeof bytes);
 
       // Tauri returns binary data as a regular array or object, convert to Uint8Array
       let uint8Data: Uint8Array;
@@ -416,7 +416,7 @@ export class TauriBridgeService implements OnDestroy {
       this.listenerActive = !!state;
       await this.waitForReady();
       await this.invoke('toggle_listener', { state });
-
+      // console.log(`[TauriBridge] Keyboard listener: ${state ? 'ACTIVE' : 'RELEASED'}`);
     } catch (error) {
       console.error('[TauriBridge] Failed to toggle listener:', error);
     }
@@ -438,7 +438,7 @@ export class TauriBridgeService implements OnDestroy {
           master_volume: config.masterVolume,
         },
       });
-
+      // console.log('[TauriBridge] Config applied:', config);
     } catch (error) {
       console.error('[TauriBridge] Failed to apply config:', error);
     }
