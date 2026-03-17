@@ -172,7 +172,7 @@ fn get_audio_harbor(_app_handle: &AppHandle) -> Result<PathBuf, String> {
     if !harbor_path.exists() {
         fs::create_dir_all(&harbor_path)
             .map_err(|e| format!("[Inner Cosmos] Harbor creation failed: {}", e))?;
-        println!("[Inner Cosmos] Harbor created at: {:?}", harbor_path);
+
     }
 
     Ok(harbor_path)
@@ -319,10 +319,7 @@ fn toggle_listener(
         regs.clear();
     }
 
-    println!(
-        "[Consonance] Keyboard sensing: {}",
-        if state { "ACTIVE" } else { "RELEASED" }
-    );
+
     Ok(())
 }
 
@@ -399,7 +396,6 @@ fn apply_config(
 ) -> Result<(), String> {
     // In Tauri 2, event emission to windows is handled differently
     // The config is accepted and logged; frontend state management handles it
-    println!("[Config] Applied: {:?}", config);
     audio.inner().set_master_volume(config.master_volume);
     Ok(())
 }
@@ -417,13 +413,9 @@ async fn audio_load(
     audio: State<'_, AudioEngine>,
 ) -> Result<LoadResult, String> {
     if IS_COMMUNITY_BUILD && !["Q", "W", "E", "R"].contains(&key.as_str()) {
-        println!("[Bridge] BLOCKED Community Build Request: {}", key);
         return Err("This pad is restricted in the Community Build.".to_string());
     }
-    // DIAGNOSTIC: This MUST show Some(val) for the optimization to work
-    println!("[Bridge] Request: {} | Cached BPM: {:?}", key, cached_bpm);
-    // audio.inner().load_sound(key, &path).await
-    audio.inner().load_sound(key, &path, cached_bpm).await // Replaced the above line with this
+    audio.inner().load_sound(key, &path, cached_bpm).await
 }
 
 #[tauri::command]
@@ -433,10 +425,8 @@ async fn audio_play(
     audio: State<'_, AudioEngine>,
 ) -> Result<(), String> {
     if IS_COMMUNITY_BUILD && !["Q", "W", "E", "R"].contains(&key.as_str()) {
-        println!("[AudioPlay] BLOCKED Community Build Play: {}", key);
         return Err("This pad is restricted in the Community Build.".to_string());
     }
-    println!("[AudioPlay] Key: {}, Params: {:?}", key, params);
     audio.inner().play_sound(key, params)
 }
 
@@ -455,7 +445,6 @@ async fn audio_update_params(
     params: crate::audio_engine::PlayParams,
     audio: State<'_, AudioEngine>,
 ) -> Result<(), String> {
-    println!("[AudioUpdate] Key: {}, Params: {:?}", key, params);
     audio.inner().update_voice(key, params)
 }
 

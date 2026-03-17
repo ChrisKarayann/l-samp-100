@@ -27,6 +27,7 @@ hound = "3.5"
 log = "0.4"
 env_logger = "0.10"
 stratum-dsp = "1.0"
+thread-priority = "1.1.0"
 
 [target."cfg(windows)"]
 dependencies = {}

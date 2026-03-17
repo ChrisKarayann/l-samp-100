@@ -166,12 +166,14 @@ export class App implements OnInit, OnDestroy {
     });
 
     // DEBUG: Periodically log the state of the BPM signal
+    /*
     setInterval(() => {
       const bpmState = this.padBpm();
       if (Object.keys(bpmState).length > 0) {
         console.log('[DEBUG] Pad BPM State:', JSON.stringify(bpmState));
       }
     }, 5000);
+    */
 
     // AUTO-BPM EFFECT: Sync master clock to average of loaded samples when in 'Auto' mode
     effect(() => {
@@ -398,7 +400,7 @@ export class App implements OnInit, OnDestroy {
     if (success) {
       // Hydrate BPM from backend detection
       const detectedBpm = this.audio.getBpm(targetPad);
-      console.log(`[App] Hydrating ${targetPad} with BPM: ${detectedBpm}`);
+
 
       if (detectedBpm > 0) {
         this.updatePadBpm(targetPad, detectedBpm);
@@ -469,7 +471,7 @@ export class App implements OnInit, OnDestroy {
   updatePadBpm(key: string, bpmVal: string | number) {
     const bpm = typeof bpmVal === 'string' ? parseFloat(bpmVal) : bpmVal;
     if (!isNaN(bpm) && bpm >= 0) {
-      console.log(`[App] updatePadBpm(${key}, ${bpm}) - Updating record`);
+
       this.padBpm.update(rec => ({ ...rec, [key]: bpm }));
       this.audio.setBpm(key, bpm); // Propagate to audio service
       this.savePadMetadata(key);
@@ -542,64 +544,6 @@ export class App implements OnInit, OnDestroy {
   }
 
   // --- 6. VISUAL FEEDBACK & THE EYE ---
-  // REPLACE THIS WITH THE BLOCK BELOW FOR PERFORMANCE OPTIMIZATION
-  /*
-  startVisualizer() {
-    // Keep canvas rendering outside Angular's change detection for performance
-    this.zone.runOutsideAngular(() => {
-      const draw = () => {
-        this.pads().forEach(key => {
-          const canvas = document.getElementById(`osc-${key}`) as HTMLCanvasElement;
-          const ctx = canvas?.getContext('2d');
-          if (!ctx) return;
-
-          const peak = this.audio.getLevel(key);
-          const samples = this.audio.getSamples(key);
-          const isPlaying = this.playingPads().has(key);
-
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.lineWidth = 2;
-          ctx.strokeStyle = isPlaying ? this.accentColor() : 'rgba(255,255,255,0.1)';
-
-          if (this.isPadActive(key)) {
-            const remainingTime = this.audio.getRemainingTime(key);
-
-            const timerEl = document.getElementById(`timer-${key}`);
-            if (timerEl) {
-              timerEl.innerText = this.formatTime(key, remainingTime);
-            }
-          }
-
-          // Draw a real time-domain oscilloscope "thread"
-          ctx.beginPath();
-          const midY = canvas.height / 2;
-          const width = canvas.width;
-
-          if (isPlaying && samples.length > 0) {
-            const sliceWidth = width / (samples.length - 1);
-            for (let i = 0; i < samples.length; i++) {
-              const x = i * sliceWidth;
-              const v = samples[i] * 0.8; // Scale for visibility
-              const y = midY + (v * midY);
-
-              if (i === 0) ctx.moveTo(x, y);
-              else ctx.lineTo(x, y);
-            }
-          } else {
-            ctx.moveTo(0, midY);
-            ctx.lineTo(width, midY);
-          }
-
-          ctx.stroke();
-        });
-        this.animationId = requestAnimationFrame(draw);
-      };
-      draw();
-    });
-  }
-  */
-  // END OF BLOCK TO REPLACE
-
   startVisualizer() {
     // 1. Prevent multiple loops from running simultaneously
     if (this.animationId) return;

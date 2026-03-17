@@ -98,45 +98,6 @@ export class Audio {
     poll();
   }
 
-  // REPLACED BLOCK FOR OPTIMIZATION
-  /*
-  private startLevelPolling() {
-    if (this.levelPollingActive) return;
-    this.levelPollingActive = true;
-
-    const poll = async () => {
-      if (!this.levelPollingActive) return;
-
-      const response = await this.tauriBridge.audioGetLevels();
-      this.latestLevels = response.data;
-      this.levelData$.next(response.data);
-
-      const backendActive = new Set(response.active_keys);
-
-      // Sync activePads based on backend truth
-      // If a pad is in activePads but NOT in backendActive, it has finished in Rust
-      this.activePads.forEach((key) => {
-        if (!backendActive.has(key)) {
-          this.activePads.delete(key);
-          this.stoppingPads.delete(key); // Cleanup
-          this.padFinished$.next(key);
-        }
-      });
-
-      // We could also add keys that are in backendActive but not in activePads
-      // to handle cases where voices are triggered outside of toggleSound (e.g. MIDI)
-      backendActive.forEach(key => {
-        if (!this.activePads.has(key)) {
-          this.activePads.add(key);
-        }
-      });
-
-      requestAnimationFrame(poll);
-    };
-    poll();
-  }
-    */
-  // END REPLACED BLOCK FOR OPTIMIZATION
 
   // --- 1. THE EYE (ANALYSIS) ---
   getLevel(key: string): number {
@@ -149,47 +110,6 @@ export class Audio {
 
   // --- 2. LOADING & BUFFERING ---
 
-  // REPLACED BLOCK FOR OPTIMIZATION
-  /*
-  async loadSound(key: string, filePath: string): Promise<boolean> {
-    try {
-      this.loadingProgress$.next({ key, progress: 0 });
-
-      let finalPath = filePath;
-      if (filePath.startsWith('music-app://harbor/')) {
-        const fileName = filePath.substring('music-app://harbor/'.length);
-        finalPath = await this.tauriBridge.getFilePath(fileName);
-      } else if (filePath.startsWith('music-app://system')) {
-        // Add a small yield to let UI render 'LOAD 0%'
-        await new Promise(resolve => setTimeout(resolve, 50));
-        const url = new URL(filePath);
-        finalPath = url.searchParams.get('path') || filePath;
-      }
-
-      this.loadingProgress$.next({ key, progress: 20 });
-      const loadResult = await this.tauriBridge.audioLoad(key, finalPath);
-      console.log(`[AudioService] Raw LoadResult for ${key}:`, loadResult);
-
-      const { duration, bpm, waveform } = loadResult;
-      this.loadingProgress$.next({ key, progress: 100 });
-
-      this.soundInfo.set(key, { duration, bpm, waveform });
-
-      // HYDRATION: If no custom out-point is saved, initialize to the full duration
-      if (!this.trimOutSettings.has(key)) {
-        this.trimOutSettings.set(key, duration);
-      }
-
-      console.log(`[AudioService] ${key} buffered: ${duration}s, Detected BPM: ${bpm}`);
-      setTimeout(() => this.loadingProgress$.next({ key, progress: -1 }), 500);
-      return true;
-    } catch (err) {
-      console.error(`[RustAudio] Load failed:`, err);
-      this.loadingProgress$.next({ key, progress: -1 });
-      return false;
-    }
-  }
-  */
 
   /**
  * Updated loadSound to support cached BPM from persistence
@@ -213,7 +133,7 @@ export class Audio {
       // --- THE FIX: Pass the cachedBpm through to the bridge ---
       const loadResult = await this.tauriBridge.audioLoad(key, finalPath, cachedBpm);
 
-      console.log(`[AudioService] Raw LoadResult for ${key}:`, loadResult);
+
 
       const { duration, bpm, waveform } = loadResult;
       this.loadingProgress$.next({ key, progress: 100 });
@@ -224,7 +144,7 @@ export class Audio {
         this.trimOutSettings.set(key, duration);
       }
 
-      console.log(`[AudioService] ${key} buffered: ${duration}s, BPM: ${bpm} ${cachedBpm ? '(from cache)' : '(analyzed)'}`);
+
 
       setTimeout(() => this.loadingProgress$.next({ key, progress: -1 }), 500);
       return true;
@@ -419,7 +339,7 @@ export class Audio {
   getBpm(key: string): number {
     const info = this.soundInfo.get(key);
     const bpm = info?.bpm ?? 120;
-    console.log(`[AudioService] getBpm(${key}) -> ${bpm} (exists: ${!!info})`);
+
     return bpm;
   }
 
