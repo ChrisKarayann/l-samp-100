@@ -1,6 +1,6 @@
 [package]
 name = "lsamp-100"
-version = "1.0.0"
+version = "1.1.0"
 description = "Linear Sample Navigation Sincere Framework - Audio Sampler"
 authors = ["Chris <chris@liturgy.one>"]
 edition = "2021"

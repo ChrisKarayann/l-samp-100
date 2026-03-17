@@ -1,6 +1,6 @@
 {
   "productName": "LSAMP-100",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "identifier": "com.lsamp.conductor",
   "build": {
     "beforeDevCommand": "npm run start",
