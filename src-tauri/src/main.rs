@@ -161,6 +161,11 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
                     let audio = app_handle.state::<audio_engine::AudioEngine>();
 
                     // Enforce Community Build restrictions for global triggers
+                    let mut permitted = true;
+                    if IS_COMMUNITY_BUILD && !["Q", "W", "E", "R"].contains(&k) {
+                        permitted = false;
+                    }
+
                     let mut is_playing = None;
 
                     if permitted {
