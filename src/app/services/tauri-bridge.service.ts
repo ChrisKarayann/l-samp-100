@@ -154,7 +154,8 @@ export class TauriBridgeService implements OnDestroy {
           const isPlaying = await this.invoke('audio_toggle_direct', { key: normalizedKey }) as boolean;
           this.onKeyTriggered.next({ key: normalizedKey, isPlaying });
         } catch (e) {
-          console.error('[TauriBridge] Manual toggle failed:', e);
+          // Pad might be empty - we still want the "push" visual effect
+          this.onKeyTriggered.next({ key: normalizedKey });
         }
       }
     });
