@@ -35,6 +35,12 @@ pub struct HotkeyRegistry {
     pub registrations: Mutex<Vec<String>>,
 }
 
+#[derive(Clone, Serialize)]
+struct GlobalKeyPayload {
+    key: String,
+    is_playing: Option<bool>,
+}
+
 /// Configuration structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -155,17 +161,12 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
                     let audio = app_handle.state::<audio_engine::AudioEngine>();
 
                     // Enforce Community Build restrictions for global triggers
-                    let mut permitted = true;
-                    if IS_COMMUNITY_BUILD && !["Q", "W", "E", "R"].contains(&k) {
-                        permitted = false;
-                    }
+                    let mut is_playing = None;
 
                     if permitted {
                         if k == "SPACE" {
                             audio.stop_all();
                         } else {
-                            // Only trigger pads that actually have a config synced
-                            // (and therefore have a sound loaded)
                             // --- FOCUS CHECK ---
                             // Only trigger from background if the main window is NOT focused.
                             // If focused, the frontend's native listeners handle it.
@@ -175,14 +176,19 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
                                 .unwrap_or(false);
 
                             if !is_focused {
-                                let _ = audio.toggle_sound_direct(k_string);
+                                if let Ok(res) = audio.toggle_sound_direct(k_string) {
+                                    is_playing = Some(res);
+                                }
                             }
                         }
                     }
 
                     // We still emit the event so the Frontend can update its visuals
                     // (LED pulses, etc.) whenever it wakes up.
-                    let _ = app_handle.emit("global-key-press", k);
+                    let _ = app_handle.emit("global-key-press", GlobalKeyPayload { 
+                        key: k.to_string(), 
+                        is_playing 
+                    });
                 }
             }
         })

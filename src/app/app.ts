@@ -247,8 +247,9 @@ export class App implements OnInit, OnDestroy {
   // --- 3. HARDWARE & BRIDGE LISTENERS ---
   private setupHardwareListeners() {
     // Key triggered listener
-    this.tauriBridge.onKeyTriggered.subscribe((key: string) => {
-      const normalizedKey = key.toUpperCase();
+    this.tauriBridge.onKeyTriggered.subscribe((event: { key: string, isPlaying?: boolean }) => {
+      const normalizedKey = event.key.toUpperCase();
+      const isPlaying = event.isPlaying;
 
       if (!this.pads().includes(normalizedKey)) return;
       if (this.isCommunityBuild() && !['Q', 'W', 'E', 'R'].includes(normalizedKey)) return;
@@ -256,22 +257,24 @@ export class App implements OnInit, OnDestroy {
       if (this.processingKeys.has(normalizedKey)) return;
       this.processingKeys.add(normalizedKey);
 
-      // --- UI FEEDBACK ONLY ---
-      // The actual audio trigger now happens in Rust (main.rs).
-      // Here we just update the UI signals for immediate responsiveness.
-      const wasPlaying = this.playingPads().has(normalizedKey);
-
-      // Visual Pulse (Happens for all keys, even empty ones)
+      // --- UI PULSE (Immediate response) ---
       this.activeKey.set(normalizedKey);
       setTimeout(() => {
         this.activeKey.set(null);
         this.processingKeys.delete(normalizedKey);
       }, 200);
 
-      // --- AUDIO PLAYING STATE (Only for loaded pads) ---
+      // --- STATE SYNC ---
+      // If the backend provided a definitive state, we MUST follow it.
+      // This solves the focus-inversion bug.
       if (this.loadedPads().has(normalizedKey)) {
-        // Eagerly update playing state (will be confirmed by polling loop)
-        if (!wasPlaying) {
+        const currentlyShowingAsPlaying = this.playingPads().has(normalizedKey);
+        
+        // If isPlaying is provided, we use it. Otherwise we toggle locally (fallback)
+        const targetState = isPlaying !== undefined ? isPlaying : !currentlyShowingAsPlaying;
+
+        if (targetState) {
+          // START / STAY ON
           this.audio.recordTrigger(normalizedKey);
           this.playingPads.update(set => {
             const newSet = new Set(set);
@@ -283,10 +286,11 @@ export class App implements OnInit, OnDestroy {
             newSet.delete(normalizedKey);
             return newSet;
           });
-          // Wake visualizer
           if (this.animationId === 0) this.startVisualizer();
         } else {
-          this.audio.stopSound(normalizedKey);
+          // STOP / STAY OFF
+          // Note: The audio is ALREADY stopping/stopped in the backend. 
+          // We just update the UI state to match.
           this.playingPads.update(set => {
             const newSet = new Set(set);
             newSet.delete(normalizedKey);

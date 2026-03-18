@@ -23,6 +23,11 @@ export interface VisualData {
   samples: number[];
 }
 
+export interface KeyTriggerEvent {
+  key: string;
+  isPlaying?: boolean;
+}
+
 export interface LevelsResponse {
   data: Record<string, VisualData>;
   active_keys: string[];
@@ -33,7 +38,7 @@ export interface LevelsResponse {
 })
 export class TauriBridgeService implements OnDestroy {
   // Event subjects for frontend subscriptions
-  onKeyTriggered = new Subject<string>();
+  onKeyTriggered = new Subject<KeyTriggerEvent>();
   onGlobalStop = new Subject<void>();
   onApplyConfig = new Subject<AppConfig>();
   onOpenModal = new Subject<any>();
@@ -87,7 +92,7 @@ export class TauriBridgeService implements OnDestroy {
 
       // Listen for the new global-key-press from rdev (Background)
       const globalKeyPressUnlisten = await this.listen('global-key-press', (event: any) => {
-        const key = event.payload as string;
+        const { key, is_playing } = event.payload;
         
         // --- HYBRID LOGIC ---
         // If the window is BLURRED, we use rdev for both audio AND UI.
@@ -97,7 +102,8 @@ export class TauriBridgeService implements OnDestroy {
           if (key === 'SPACE') {
             this.onGlobalStop.next();
           } else {
-            this.onKeyTriggered.next(key);
+            // is_playing is Some(bool) from backend rdev loop
+            this.onKeyTriggered.next({ key, isPlaying: is_playing as boolean });
           }
         }
       });
@@ -131,7 +137,7 @@ export class TauriBridgeService implements OnDestroy {
   private setupKeyboardListeners(): void {
     const gameKeys = ['q', 'w', 'e', 'r', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v'];
 
-    window.addEventListener('keydown', (event) => {
+    window.addEventListener('keydown', async (event) => {
       if (!this.listenerActive) return;
       const key = event.key.toLowerCase();
 
@@ -143,11 +149,13 @@ export class TauriBridgeService implements OnDestroy {
         const normalizedKey = key.toUpperCase();
         event.preventDefault();
         
-        // Immediate UI feedback for focused state
-        this.onKeyTriggered.next(normalizedKey);
-        
-        // Trigger audio directly via IPC (Native events are more reliable than rdev when focused)
-        this.invoke('audio_toggle_direct', { key: normalizedKey }).catch((e: any) => console.error(e));
+        // Trigger audio directly via IPC and get the ACTUAL NEW STATE
+        try {
+          const isPlaying = await this.invoke('audio_toggle_direct', { key: normalizedKey }) as boolean;
+          this.onKeyTriggered.next({ key: normalizedKey, isPlaying });
+        } catch (e) {
+          console.error('[TauriBridge] Manual toggle failed:', e);
+        }
       }
     });
   }
