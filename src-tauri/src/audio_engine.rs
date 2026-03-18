@@ -68,6 +68,7 @@ pub struct LevelsResponse {
 
 pub struct AudioEngineState {
     pub sound_bank: HashMap<String, Arc<AudioBuffer>>,
+    pub pad_configs: HashMap<String, PlayParams>, // Persistent pad settings
     voices: Vec<Voice>,
     master_volume: f32,
     pub master_bpm: f32, // Global Master BPM
@@ -91,6 +92,7 @@ impl AudioEngine {
 
         let state = Arc::new(Mutex::new(AudioEngineState {
             sound_bank: HashMap::new(),
+            pad_configs: HashMap::new(),
             voices: Vec::new(),
             master_volume: 1.0,
             master_bpm: 120.0,
@@ -184,7 +186,15 @@ impl AudioEngine {
 
     pub fn play_sound(&self, key: String, params: PlayParams) -> Result<(), String> {
         let mut state = self.state.lock().map_err(|e| e.to_string())?;
+        self.play_sound_locked(&mut state, key, params)
+    }
 
+    fn play_sound_locked(
+        &self,
+        state: &mut AudioEngineState,
+        key: String,
+        params: PlayParams,
+    ) -> Result<(), String> {
         let buffer = state
             .sound_bank
             .get(&key)
@@ -201,12 +211,11 @@ impl AudioEngine {
         }
 
         // Convert time params to samples relative to the FILE's sample rate
-        // We track position as sample index in the interleaved buffer
         let b_channels = buffer.channels as f64;
         let start_pos = params.start_time as f64 * file_sr * b_channels;
         let end_pos = params.end_time as f64 * file_sr * b_channels;
 
-        // Envelope is tracked in DEVICE samples for consistent timing
+        // Envelope is tracked in DEVICE samples
         let attack_samples = (params.attack as f64 * device_sr) as usize;
         let release_samples = (params.release as f64 * device_sr) as usize;
 
@@ -233,6 +242,34 @@ impl AudioEngine {
         Ok(())
     }
 
+    pub fn toggle_sound_direct(&self, key: String) -> Result<bool, String> {
+        let mut state = self.state.lock().map_err(|e| e.to_string())?;
+        let device_sr = state.sample_rate as f64;
+
+        // 1. Check if already playing
+        let mut found_active = false;
+        for voice in state.voices.iter_mut() {
+            if voice.key == key && !voice.stopped && !voice.is_fading_out {
+                voice.stop_command = true;
+                found_active = true;
+            }
+        }
+
+        if found_active {
+            return Ok(false); // Was playing, now stopping
+        }
+
+        // 2. Otherwise, trigger play using stored config
+        let params = state
+            .pad_configs
+            .get(&key)
+            .cloned()
+            .ok_or_else(|| format!("No configuration found for pad {}", key))?;
+
+        self.play_sound_locked(&mut state, key, params)?;
+        Ok(true) // Started playing
+    }
+
     pub fn stop_sound(&self, key: String, effective_release: Option<f32>) -> Result<(), String> {
         let mut state = self.state.lock().map_err(|e| e.to_string())?;
         let device_sr = state.sample_rate as f64;
@@ -253,6 +290,10 @@ impl AudioEngine {
     pub fn update_voice(&self, key: String, params: PlayParams) -> Result<(), String> {
         let mut state = self.state.lock().map_err(|e| e.to_string())?;
 
+        // 1. Update the persistent config for future triggers
+        state.pad_configs.insert(key.clone(), params.clone());
+
+        // 2. Update all active voices for this key
         for voice in state.voices.iter_mut() {
             if voice.key == key && !voice.stopped {
                 let file_sr = voice.buffer.sample_rate as f64;

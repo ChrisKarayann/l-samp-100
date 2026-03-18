@@ -256,47 +256,46 @@ export class App implements OnInit, OnDestroy {
       if (this.processingKeys.has(normalizedKey)) return;
       this.processingKeys.add(normalizedKey);
 
+      // --- UI FEEDBACK ONLY ---
+      // The actual audio trigger now happens in Rust (main.rs).
+      // Here we just update the UI signals for immediate responsiveness.
       const wasPlaying = this.playingPads().has(normalizedKey);
 
-      this.audio.toggleSound(normalizedKey).then(isNowPlaying => {
+      // Visual Pulse
+      this.activeKey.set(normalizedKey);
+      setTimeout(() => {
+        this.activeKey.set(null);
+        this.processingKeys.delete(normalizedKey);
+      }, 200);
 
-        // --- THE RE-WAKE LOGIC ---
-        if (isNowPlaying && this.animationId === 0) {
-          this.startVisualizer();
-        }
-        // -------------------------
-
-        this.activeKey.set(normalizedKey);
-
-        setTimeout(() => {
-          this.activeKey.set(null);
-          this.processingKeys.delete(normalizedKey);
-        }, 200);
-
-        if (isNowPlaying) {
-          this.playingPads.update(set => {
-            const newSet = new Set(set);
-            newSet.add(normalizedKey);
-            return newSet;
-          });
-          this.fadingPads.update(set => {
-            const newSet = new Set(set);
-            newSet.delete(normalizedKey);
-            return newSet;
-          });
-        } else if (wasPlaying) {
-          this.playingPads.update(set => {
-            const newSet = new Set(set);
-            newSet.delete(normalizedKey);
-            return newSet;
-          });
-          this.fadingPads.update(set => {
-            const newSet = new Set(set);
-            newSet.add(normalizedKey);
-            return newSet;
-          });
-        }
-      });
+      // Eagerly update playing state (will be confirmed by polling loop)
+      if (!wasPlaying) {
+        this.audio.recordTrigger(normalizedKey);
+        this.playingPads.update(set => {
+          const newSet = new Set(set);
+          newSet.add(normalizedKey);
+          return newSet;
+        });
+        this.fadingPads.update(set => {
+          const newSet = new Set(set);
+          newSet.delete(normalizedKey);
+          return newSet;
+        });
+        // Wake visualizer
+        if (this.animationId === 0) this.startVisualizer();
+      } else {
+        this.audio.stopSound(normalizedKey);
+        this.playingPads.update(set => {
+          const newSet = new Set(set);
+          newSet.delete(normalizedKey);
+          return newSet;
+        });
+        this.fadingPads.update(set => {
+          const newSet = new Set(set);
+          newSet.add(normalizedKey);
+          return newSet;
+        });
+      }
     });
 
     // Global stop listener (SPACE key)
@@ -414,6 +413,10 @@ export class App implements OnInit, OnDestroy {
         n.add(targetPad);
         return n;
       });
+
+      // Force a parameter sync to Rust so the backend is ready for immediate triggering
+      this.audio.setFadeParams(targetPad, this.currentAttack(), this.currentRelease());
+      this.audio.setGain(targetPad, this.currentVol());
     }
   }
 

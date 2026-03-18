@@ -204,6 +204,17 @@ export class Audio {
     return true;
   }
 
+  /**
+   * Called when a sound is triggered by the Rust backend.
+   * Ensures the frontend records the start time for the timer displays.
+   */
+  recordTrigger(key: string) {
+    this.activePads.add(key);
+    this.startTimes.set(key, Date.now() / 1000);
+    this.stoppingPads.delete(key);
+    this.loopToOneshotTransitions.delete(key);
+  }
+
   // --- 4. FADE & VOLUME CONTROL ---
   private stopSoundWithFade(key: string): void {
     if (this.activePads.has(key) && !this.stoppingPads.has(key)) {
@@ -253,26 +264,24 @@ export class Audio {
   }
 
   private async syncParamsToRust(key: string) {
-    if (this.activePads.has(key)) {
-      const { in: startOffset, out: endOffset } = this.getTrimParams(key);
-      const targetVol = this.getGain(key);
-      const { attack, release } = this.getFadeParams(key);
-      const looping = this.getLoopState(key);
+    const { in: startOffset, out: endOffset } = this.getTrimParams(key);
+    const targetVol = this.getGain(key);
+    const { attack, release } = this.getFadeParams(key);
+    const looping = this.getLoopState(key);
 
-      const sync = this.getSyncState(key);
-      const sample_bpm = this.getBpm(key);
+    const sync = this.getSyncState(key);
+    const sample_bpm = this.getBpm(key);
 
-      await this.tauriBridge.audioUpdateParams(key, {
-        volume: targetVol,
-        attack,
-        release,
-        looping,
-        startTime: startOffset,
-        endTime: endOffset,
-        sync,
-        sample_bpm,
-      });
-    }
+    await this.tauriBridge.audioUpdateParams(key, {
+      volume: targetVol,
+      attack,
+      release,
+      looping,
+      startTime: startOffset,
+      endTime: endOffset,
+      sync,
+      sample_bpm,
+    });
   }
 
   async stopAllSounds(keysOverride?: string[]) {
@@ -294,6 +303,7 @@ export class Audio {
   // --- 5. PARAMETER CALIBRATION ---
   setFadeParams(key: string, attack: number, release: number) {
     this.fadeSettings.set(key, { attack, release });
+    this.syncParamsToRust(key);
   }
 
   getFadeParams(key: string) {
@@ -453,6 +463,7 @@ export class Audio {
   setTrimParams(key: string, trimIn: number, trimOut: number) {
     this.trimInSettings.set(key, trimIn);
     this.trimOutSettings.set(key, trimOut);
+    this.syncParamsToRust(key);
   }
 
   getTrimParams(key: string) {

@@ -143,10 +143,31 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
                 };
 
                 if let Some(k) = key_str {
-                    if k == "SPACE" {
-                        let audio = app_handle.state::<AudioEngine>();
-                        audio.stop_all();
+                    let k_string = k.to_string();
+
+                    // --- DIRECT TRIGGERING (The Fix) ---
+                    // By triggering here in Rust, we bypass the Frontend Webview's
+                    // event loop, so the audio plays even if the app is minimized.
+                    let audio = app_handle.state::<audio_engine::AudioEngine>();
+
+                    // Enforce Community Build restrictions for global triggers
+                    let mut permitted = true;
+                    if IS_COMMUNITY_BUILD && !["Q", "W", "E", "R"].contains(&k) {
+                        permitted = false;
                     }
+
+                    if permitted {
+                        if k == "SPACE" {
+                            audio.stop_all();
+                        } else {
+                            // Only trigger pads that actually have a config synced
+                            // (and therefore have a sound loaded)
+                            let _ = audio.toggle_sound_direct(k_string);
+                        }
+                    }
+
+                    // We still emit the event so the Frontend can update its visuals
+                    // (LED pulses, etc.) whenever it wakes up.
                     let _ = app_handle.emit("global-key-press", k);
                 }
             }
