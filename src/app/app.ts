@@ -261,40 +261,43 @@ export class App implements OnInit, OnDestroy {
       // Here we just update the UI signals for immediate responsiveness.
       const wasPlaying = this.playingPads().has(normalizedKey);
 
-      // Visual Pulse
+      // Visual Pulse (Happens for all keys, even empty ones)
       this.activeKey.set(normalizedKey);
       setTimeout(() => {
         this.activeKey.set(null);
         this.processingKeys.delete(normalizedKey);
       }, 200);
 
-      // Eagerly update playing state (will be confirmed by polling loop)
-      if (!wasPlaying) {
-        this.audio.recordTrigger(normalizedKey);
-        this.playingPads.update(set => {
-          const newSet = new Set(set);
-          newSet.add(normalizedKey);
-          return newSet;
-        });
-        this.fadingPads.update(set => {
-          const newSet = new Set(set);
-          newSet.delete(normalizedKey);
-          return newSet;
-        });
-        // Wake visualizer
-        if (this.animationId === 0) this.startVisualizer();
-      } else {
-        this.audio.stopSound(normalizedKey);
-        this.playingPads.update(set => {
-          const newSet = new Set(set);
-          newSet.delete(normalizedKey);
-          return newSet;
-        });
-        this.fadingPads.update(set => {
-          const newSet = new Set(set);
-          newSet.add(normalizedKey);
-          return newSet;
-        });
+      // --- AUDIO PLAYING STATE (Only for loaded pads) ---
+      if (this.loadedPads().has(normalizedKey)) {
+        // Eagerly update playing state (will be confirmed by polling loop)
+        if (!wasPlaying) {
+          this.audio.recordTrigger(normalizedKey);
+          this.playingPads.update(set => {
+            const newSet = new Set(set);
+            newSet.add(normalizedKey);
+            return newSet;
+          });
+          this.fadingPads.update(set => {
+            const newSet = new Set(set);
+            newSet.delete(normalizedKey);
+            return newSet;
+          });
+          // Wake visualizer
+          if (this.animationId === 0) this.startVisualizer();
+        } else {
+          this.audio.stopSound(normalizedKey);
+          this.playingPads.update(set => {
+            const newSet = new Set(set);
+            newSet.delete(normalizedKey);
+            return newSet;
+          });
+          this.fadingPads.update(set => {
+            const newSet = new Set(set);
+            newSet.add(normalizedKey);
+            return newSet;
+          });
+        }
       }
     });
 
@@ -1060,12 +1063,12 @@ export class App implements OnInit, OnDestroy {
     window.location.reload();
   }
 
-  executeClearSelected() {
+  async executeClearSelected() {
     if (!this.selectedPad()) return;
     const target = this.selectedPad()!;
 
     this.audio.stopSound(target);
-    this.audio.unloadSound(target);
+    await this.audio.unloadSound(target);
 
     this.playingPads.update(set => {
       const newSet = new Set(set);
@@ -1106,10 +1109,10 @@ export class App implements OnInit, OnDestroy {
     this.closeModal();
   }
 
-  executeClearAllPads() {
+  async executeClearAllPads() {
+    await this.audio.clearAll();
+
     this.pads().forEach(p => {
-      this.audio.stopSound(p);
-      this.audio.unloadSound(p);
       localStorage.removeItem(`lsamp_pad_meta_${p}`);
     });
 

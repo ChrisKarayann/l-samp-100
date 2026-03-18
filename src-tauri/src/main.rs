@@ -42,7 +42,7 @@ pub struct AppConfig {
     master_volume: f32,
 }
 
-pub const IS_COMMUNITY_BUILD: bool = true; // I am just sitting here
+pub const IS_COMMUNITY_BUILD: bool = false; // I am just sitting here
 
 // ============================================================================
 // STATE MANAGEMENT
@@ -78,6 +78,8 @@ fn main() {
             audio_get_waveform,
             audio_set_master_bpm,
             audio_update_params,
+            audio_unload,
+            audio_clear_all,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
@@ -440,6 +442,16 @@ async fn audio_load(
     }
     // println!("[Bridge] Request: {} | Cached BPM: {:?}", key, cached_bpm);
     audio.inner().load_sound(key, &path, cached_bpm).await
+}
+
+#[tauri::command]
+async fn audio_unload(key: String, audio: State<'_, AudioEngine>) -> Result<(), String> {
+    audio.inner().unload_sound(key)
+}
+
+#[tauri::command]
+async fn audio_clear_all(audio: State<'_, AudioEngine>) -> Result<(), String> {
+    audio.inner().clear_all_pads()
 }
 
 #[tauri::command]

@@ -244,7 +244,6 @@ impl AudioEngine {
 
     pub fn toggle_sound_direct(&self, key: String) -> Result<bool, String> {
         let mut state = self.state.lock().map_err(|e| e.to_string())?;
-        let device_sr = state.sample_rate as f64;
 
         // 1. Check if already playing
         let mut found_active = false;
@@ -343,6 +342,29 @@ impl AudioEngine {
                 active_keys: Vec::new(),
             }
         }
+    }
+
+    pub fn unload_sound(&self, key: String) -> Result<(), String> {
+        let mut state = self.state.lock().map_err(|e| e.to_string())?;
+        state.sound_bank.remove(&key);
+        state.pad_configs.remove(&key);
+        // Also stop any active voices for this key
+        for voice in state.voices.iter_mut() {
+            if voice.key == key {
+                voice.stopped = true;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn clear_all_pads(&self) -> Result<(), String> {
+        let mut state = self.state.lock().map_err(|e| e.to_string())?;
+        state.sound_bank.clear();
+        state.pad_configs.clear();
+        for voice in state.voices.iter_mut() {
+            voice.stopped = true;
+        }
+        Ok(())
     }
 }
 

@@ -72,9 +72,16 @@ export class Audio {
 
         const backendActive = new Set(response.active_keys);
 
-        // Sync logic remains the same
+        // Sync logic: Only remove if backend says it's finished AND grace period has passed
         this.activePads.forEach((key) => {
           if (!backendActive.has(key)) {
+            const startTime = this.startTimes.get(key) || 0;
+            const now = Date.now() / 1000;
+            const elapsed = now - startTime;
+
+            // Grace period: 200ms (to allow backend to process trigger and report back)
+            if (elapsed < 0.2) return;
+
             this.activePads.delete(key);
             this.stoppingPads.delete(key);
             this.padFinished$.next(key);
@@ -491,9 +498,19 @@ export class Audio {
     this.stopSoundWithFade(key);
   }
 
-  unloadSound(key: string) {
+  async unloadSound(key: string) {
     this.soundInfo.delete(key);
     this.trimInSettings.delete(key);
     this.trimOutSettings.delete(key);
+    await this.tauriBridge.audioUnload(key);
+  }
+
+  async clearAll() {
+    this.soundInfo.clear();
+    this.trimInSettings.clear();
+    this.trimOutSettings.clear();
+    this.activePads.clear();
+    this.stoppingPads.clear();
+    await this.tauriBridge.audioClearAll();
   }
 }

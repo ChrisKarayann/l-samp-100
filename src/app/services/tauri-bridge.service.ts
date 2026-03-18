@@ -77,7 +77,9 @@ export class TauriBridgeService implements OnDestroy {
       this.tauriReady = true;
 
       // Setup native keyboard listeners for QWER ASDF ZXCV
-      this.setupKeyboardListeners();
+      // REMOVED: This is now handled globally by the Rust backend using rdev.
+      // Keeping this commented out for reference but disabled to prevent double-triggering.
+      // this.setupKeyboardListeners();
 
       // Listen for keyboard triggers from Rust backend (Pads)
       const keyTriggerUnlisten = await this.listen('key-triggered', (event: any) => {
@@ -291,6 +293,30 @@ export class TauriBridgeService implements OnDestroy {
     } catch (error) {
       console.error(`[TauriBridge] Failed to load audio ${key}:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Unload a sound from the Rust engine
+   */
+  async audioUnload(key: string): Promise<void> {
+    try {
+      await this.waitForReady();
+      await this.invoke('audio_unload', { key });
+    } catch (error) {
+      console.error(`[TauriBridge] Failed to unload audio ${key}:`, error);
+    }
+  }
+
+  /**
+   * Clear all sounds and configurations from the Rust engine
+   */
+  async audioClearAll(): Promise<void> {
+    try {
+      await this.waitForReady();
+      await this.invoke('audio_clear_all');
+    } catch (error) {
+      console.error(`[TauriBridge] Failed to clear all audio:`, error);
     }
   }
 
