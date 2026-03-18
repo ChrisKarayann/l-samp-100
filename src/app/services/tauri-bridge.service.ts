@@ -76,10 +76,8 @@ export class TauriBridgeService implements OnDestroy {
       this.listen = eventModule.listen;
       this.tauriReady = true;
 
-      // Setup native keyboard listeners for QWER ASDF ZXCV
-      // REMOVED: This is now handled globally by the Rust backend using rdev.
-      // Keeping this commented out for reference but disabled to prevent double-triggering.
-      // this.setupKeyboardListeners();
+      // Hybrid Triggering: Browser handles focused state, Rust handles background
+      this.setupKeyboardListeners();
 
       // Listen for keyboard triggers from Rust backend (Pads)
       const keyTriggerUnlisten = await this.listen('key-triggered', (event: any) => {
@@ -89,11 +87,18 @@ export class TauriBridgeService implements OnDestroy {
 
       // Listen for the new global-key-press from rdev (Background)
       const globalKeyPressUnlisten = await this.listen('global-key-press', (event: any) => {
-        const key = event.payload;
-        if (key === 'SPACE') {
-          this.onGlobalStop.next();
-        } else {
-          this.onKeyTriggered.next(key);
+        const key = event.payload as string;
+        
+        // --- HYBRID LOGIC ---
+        // If the window is BLURRED, we use rdev for both audio AND UI.
+        // If the window is FOCUSED, we ignore rdev because the native keydown 
+        // listener (below) already handled both.
+        if (!document.hasFocus()) {
+          if (key === 'SPACE') {
+            this.onGlobalStop.next();
+          } else {
+            this.onKeyTriggered.next(key);
+          }
         }
       });
 
@@ -124,23 +129,25 @@ export class TauriBridgeService implements OnDestroy {
    * Captures: Q, W, E, R, A, S, D, F, Z, X, C, V
    */
   private setupKeyboardListeners(): void {
-    const gameKeys = ['q', 'w', 'e', 'r', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v', ' '];
-    // console.log('[TauriBridge] Keyboard listeners initialized for:', gameKeys);
+    const gameKeys = ['q', 'w', 'e', 'r', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v'];
 
     window.addEventListener('keydown', (event) => {
       if (!this.listenerActive) return;
-      const key = event.key.toLowerCase(); // Don't toLowerCase yet for the space check
+      const key = event.key.toLowerCase();
 
       if (key === ' ') {
-        // console.log('[TauriBridge] SPACE key detected - global stop');
         event.preventDefault();
-        // No ngZone.run needed. Direct and Sincere.
         this.onGlobalStop.next();
-      } else if (gameKeys.includes(key.toLowerCase())) {
+        this.invoke('audio_stop_all').catch((e: any) => console.error(e));
+      } else if (gameKeys.includes(key)) {
         const normalizedKey = key.toUpperCase();
-        // console.log('[TauriBridge] Game key detected:', normalizedKey);
         event.preventDefault();
+        
+        // Immediate UI feedback for focused state
         this.onKeyTriggered.next(normalizedKey);
+        
+        // Trigger audio directly via IPC (Native events are more reliable than rdev when focused)
+        this.invoke('audio_toggle_direct', { key: normalizedKey }).catch((e: any) => console.error(e));
       }
     });
   }

@@ -80,6 +80,8 @@ fn main() {
             audio_update_params,
             audio_unload,
             audio_clear_all,
+            audio_toggle_direct,
+            audio_stop_all,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
@@ -164,7 +166,17 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
                         } else {
                             // Only trigger pads that actually have a config synced
                             // (and therefore have a sound loaded)
-                            let _ = audio.toggle_sound_direct(k_string);
+                            // --- FOCUS CHECK ---
+                            // Only trigger from background if the main window is NOT focused.
+                            // If focused, the frontend's native listeners handle it.
+                            let is_focused = app_handle
+                                .get_webview_window("main")
+                                .map(|w| w.is_focused().unwrap_or(false))
+                                .unwrap_or(false);
+
+                            if !is_focused {
+                                let _ = audio.toggle_sound_direct(k_string);
+                            }
                         }
                     }
 
@@ -442,6 +454,17 @@ async fn audio_load(
     }
     // println!("[Bridge] Request: {} | Cached BPM: {:?}", key, cached_bpm);
     audio.inner().load_sound(key, &path, cached_bpm).await
+}
+
+#[tauri::command]
+async fn audio_toggle_direct(key: String, audio: State<'_, AudioEngine>) -> Result<bool, String> {
+    audio.inner().toggle_sound_direct(key)
+}
+
+#[tauri::command]
+fn audio_stop_all(audio: State<'_, AudioEngine>) -> Result<(), String> {
+    audio.inner().stop_all();
+    Ok(())
 }
 
 #[tauri::command]
