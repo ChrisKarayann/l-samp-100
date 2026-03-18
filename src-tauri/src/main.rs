@@ -42,7 +42,7 @@ pub struct AppConfig {
     master_volume: f32,
 }
 
-pub const IS_COMMUNITY_BUILD: bool = false; // I am just sitting here
+pub const IS_COMMUNITY_BUILD: bool = true; // I am just sitting here
 
 // ============================================================================
 // STATE MANAGEMENT
