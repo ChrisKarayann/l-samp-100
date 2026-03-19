@@ -179,7 +179,7 @@ fn muzzle_system_sounds(_mute: bool, _app_handle: &tauri::AppHandle) {
                 Ok(d) => d,
                 Err(_) => return,
             };
-            let manager: IAudioSessionManager2 = match device.Activate(CLSCTX_ALL, std::ptr::null()) {
+            let manager: IAudioSessionManager2 = match device.Activate(CLSCTX_ALL, None) {
                 Ok(m) => m,
                 Err(_) => return,
             };
