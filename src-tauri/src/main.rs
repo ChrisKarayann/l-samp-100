@@ -21,6 +21,8 @@ use windows::Win32::Media::Audio::{
 use windows::core::ComInterface;
 #[cfg(target_os = "windows")]
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
+#[cfg(target_os = "windows")]
+use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
 
 mod audio_engine;
 
@@ -153,7 +155,9 @@ fn muzzle_system_sounds(_mute: bool) {
                 Ok(d) => d,
                 Err(_) => return,
             };
-            let manager: IAudioSessionManager2 = match device.Activate(CLSCTX_ALL, std::ptr::null()) {
+            // 0.52 technique: Use an explicit null pointer variable to satisfy Activate's signature
+            let activation_params: *const std::ffi::c_void = std::ptr::null();
+            let manager: IAudioSessionManager2 = match device.Activate(CLSCTX_ALL, activation_params) {
                 Ok(m) => m,
                 Err(_) => return,
             };
