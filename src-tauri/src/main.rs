@@ -43,6 +43,8 @@ pub struct HotkeyRegistry {
     pub enabled: Arc<AtomicBool>,
     /// Registered hotkey identifiers (managed under a Mutex)
     pub registrations: Mutex<Vec<String>>,
+    /// Previous alert volume on macOS (to restore later)
+    pub previous_alert_volume: Mutex<Option<i32>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -75,6 +77,7 @@ fn main() {
         .manage(HotkeyRegistry {
             enabled: Arc::new(AtomicBool::new(true)),
             registrations: Mutex::new(Vec::new()),
+            previous_alert_volume: Mutex::new(None),
         })
         .manage(AudioEngine::new().expect("Failed to initialize audio engine"))
         .invoke_handler(tauri::generate_handler![
@@ -127,22 +130,45 @@ fn main() {
 
 /// Muzzle system notification sounds briefly to prevent the "beep" on Windows/macOS
 /// without capturing the keyboard events globally.
-fn muzzle_system_sounds(_mute: bool) {
+/// Muzzle system notification sounds persistently while sensing is active.
+fn muzzle_system_sounds(mute: bool, app_handle: &tauri::AppHandle) {
     #[cfg(target_os = "macos")]
     {
-        // On macOS, "alert volume" is separate from master volume.
-        // We set it to 0 to silence the "Funk/Basso" beep.
-        let volume = if _mute { 0 } else { 75 };
-        let _ = std::process::Command::new("osascript")
-            .arg("-e")
-            .arg(format!("set volume alert volume {}", volume))
-            .spawn();
+        let registry = app_handle.state::<HotkeyRegistry>();
+        if mute {
+            // Store current volume before muting
+            let output = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg("get volume alert volume")
+                .output();
+            
+            if let Ok(out) = output {
+                let vol_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if let Ok(vol) = vol_str.parse::<i32>() {
+                    let mut prev = registry.previous_alert_volume.lock().unwrap();
+                    *prev = Some(vol);
+                }
+            }
+
+            let _ = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg("set volume alert volume 0")
+                .spawn();
+        } else {
+            // Restore previous volume
+            let mut prev = registry.previous_alert_volume.lock().unwrap();
+            let vol_to_restore = prev.unwrap_or(75);
+            let _ = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(format!("set volume alert volume {}", vol_to_restore))
+                .spawn();
+            *prev = None;
+        }
     }
 
     #[cfg(target_os = "windows")]
     {
         // On Windows, we find the "System Sounds" audio session and mute it.
-        // This requires COM initialization.
         thread::spawn(move || unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
             let enumerator: IMMDeviceEnumerator = match CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) {
@@ -153,7 +179,7 @@ fn muzzle_system_sounds(_mute: bool) {
                 Ok(d) => d,
                 Err(_) => return,
             };
-            let manager: IAudioSessionManager2 = match device.Activate(CLSCTX_ALL, None) {
+            let manager: IAudioSessionManager2 = match device.Activate(CLSCTX_ALL, std::ptr::null()) {
                 Ok(m) => m,
                 Err(_) => return,
             };
@@ -165,7 +191,7 @@ fn muzzle_system_sounds(_mute: bool) {
                             if let Ok(name) = session2.GetSessionIdentifier() {
                                 if name.to_string().unwrap_or_default().contains("SystemSounds") {
                                     if let Ok(volume) = session.cast::<ISimpleAudioVolume>() {
-                                        let _ = volume.SetMute(_mute, std::ptr::null());
+                                        let _ = volume.SetMute(mute, std::ptr::null());
                                     }
                                 }
                             }
@@ -186,12 +212,11 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
     let enabled = Arc::clone(&app_handle.state::<HotkeyRegistry>().enabled);
 
     thread::spawn(move || {
-        // [macOS Fix] On macOS, we ensure the thread's event tap has a chance 
-        // to initialize correctly by running the loop directly. 
-        // rdev::listen handles the CFRunLoop internally on macOS.
-        rdev_listen(move |event| {
+        // [macOS Fix] Use grab instead of listen to ensure more robust background 
+        // triggering on macOS. Always return Some(event) to avoid capturing.
+        if let Err(error) = rdev::grab(move |event| {
             if !enabled.load(Ordering::Relaxed) {
-                return;
+                return Some(event);
             }
 
             if let EventType::KeyPress(key) = event.event_type {
@@ -224,7 +249,7 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
                 if let Some(k) = key_str {
                     let k_string = k.to_string();
 
-                    // --- DIRECT TRIGGERING (The Fix) ---
+                    // --- DIRECT TRIGGERING ---
                     let audio = app_handle.state::<audio_engine::AudioEngine>();
 
                     let mut permitted = true;
@@ -245,18 +270,11 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
                                 .unwrap_or(false);
 
                             if !is_focused {
-                                // [The Clever Trick] Briefly muzzle system sounds to kill the beep
-                                muzzle_system_sounds(true);
-                                
+                                // [Persistent Muzzle Fix] We no longer call muzzle here.
+                                // It is now handled once in toggle_listener for zero latency.
                                 if let Ok(res) = audio.toggle_sound_direct(k_string) {
                                     is_playing = Some(res);
                                 }
-
-                                // Restore sound after a tiny pulse (100ms) to ensure OS beep window has passed
-                                thread::spawn(|| {
-                                    thread::sleep(std::time::Duration::from_millis(100));
-                                    muzzle_system_sounds(false);
-                                });
                             }
                         }
                     }
@@ -268,8 +286,10 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
                     });
                 }
             }
-        })
-        .expect("[Consonance] Could not spy on keyboard listener loop");
+            Some(event)
+        }) {
+            eprintln!("[Consonance] Loop Error: {:?}", error);
+        }
     });
 }
 
@@ -391,11 +411,14 @@ async fn open_audio_folder(app_handle: AppHandle) -> Result<(), String> {
 fn toggle_listener(
     state: bool,
     registry: State<'_, HotkeyRegistry>,
-    _app_handle: AppHandle,
+    app_handle: AppHandle,
 ) -> Result<(), String> {
     // Fast, lock-free publish of the enabled/disabled state so any callbacks
     // that are racing with unregister can short-circuit quickly.
     registry.enabled.store(state, Ordering::SeqCst);
+
+    // [Persistent Muzzle] Apply or remove muzzle based on state
+    muzzle_system_sounds(state, &app_handle);
 
     // Now manage registration lifecycle under a mutex to avoid races
     // when adding/removing OS-level hooks. The actual register/unregister
