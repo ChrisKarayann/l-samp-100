@@ -70,10 +70,8 @@ pub const IS_COMMUNITY_BUILD: bool = false; // I am just sitting here
 // ============================================================================
 
 fn log_debug(msg: &str) {
-    if let Some(dir) = dirs::data_dir().or_else(|| dirs::config_dir()) {
-        let app_dir = dir.join("lsamp-100");
-        let _ = std::fs::create_dir_all(&app_dir);
-        let log_file = app_dir.join("consonance.log");
+    if let Some(home) = dirs::home_dir() {
+        let log_file = home.join("lsamp-100-debug.log");
         if let Ok(mut file) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -128,7 +126,10 @@ fn main() {
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
-            start_background_listener(app_handle);
+            start_background_listener(app_handle.clone());
+            
+            // Ensure muzzling is active on startup since enabled defaults to true
+            muzzle_system_sounds(true, &app_handle);
 
             #[cfg(target_os = "macos")]
             {
@@ -162,11 +163,14 @@ fn main() {
 /// Muzzle system notification sounds briefly to prevent the "beep" on Windows/macOS
 /// without capturing the keyboard events globally.
 /// Muzzle system notification sounds persistently while sensing is active.
-fn muzzle_system_sounds(_mute: bool, _app_handle: &tauri::AppHandle) {
+fn muzzle_system_sounds(mute: bool, app_handle: &tauri::AppHandle) {
+    log_debug(&format!("[Muzzle] Entering muzzle (sync part) with mute={}", mute));
+    
     #[cfg(target_os = "macos")]
     {
-        let registry = _app_handle.state::<HotkeyRegistry>();
-        if _mute {
+        log_debug("[Muzzle] Target detected: macOS");
+        let registry = app_handle.state::<HotkeyRegistry>();
+        if mute {
             // Store current volume before muting
             let output = std::process::Command::new("osascript")
                 .arg("-e")
@@ -202,9 +206,10 @@ fn muzzle_system_sounds(_mute: bool, _app_handle: &tauri::AppHandle) {
 
     #[cfg(target_os = "windows")]
     {
-        log_debug(&format!("[Muzzle] Windows muzzle intent: {}", _mute));
+        log_debug("[Muzzle] Target detected: Windows");
         // On Windows, we find the "System Sounds" audio session and mute it.
         thread::spawn(move || unsafe {
+            log_debug("[Muzzle-TX] Windows muzzle thread spawned");
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
             let enumerator: IMMDeviceEnumerator = match CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) {
                 Ok(e) => e,
@@ -231,8 +236,8 @@ fn muzzle_system_sounds(_mute: bool, _app_handle: &tauri::AppHandle) {
                                 
                                 if name_str.contains("SystemSounds") {
                                     if let Ok(volume) = session.cast::<ISimpleAudioVolume>() {
-                                        let _ = volume.SetMute(_mute, std::ptr::null());
-                                        log_debug(&format!("[Muzzle] SUCCESS: Windows System Sounds Mute set to: {}", _mute));
+                                        let _ = volume.SetMute(mute, std::ptr::null());
+                                        log_debug(&format!("[Muzzle-TX] SUCCESS: Windows System Sounds Mute set to: {}", mute));
                                     }
                                 }
                             }
@@ -241,6 +246,11 @@ fn muzzle_system_sounds(_mute: bool, _app_handle: &tauri::AppHandle) {
                 }
             }
         });
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        log_debug("[Muzzle] Target detected: Linux (No-op)");
     }
 }
 
