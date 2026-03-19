@@ -259,22 +259,56 @@ fn muzzle_system_sounds(mute: bool, app_handle: &tauri::AppHandle) {
 // GLOBAL BACKGROUND LISTENER (using rdev)
 // ============================================================================
 
-/// Start the background keyboard listener in a separate thread
 fn start_background_listener(app_handle: tauri::AppHandle) {
     let is_focused_flag = Arc::clone(&app_handle.state::<HotkeyRegistry>().is_focused);
     let enabled = Arc::clone(&app_handle.state::<HotkeyRegistry>().enabled);
 
-    // [Reliability Fix] Use tauri's async runtime for the listener thread
-    // as it manages platform-specific capabilities better on macOS.
-    tauri::async_runtime::spawn_blocking(move || {
-        log_debug("[Listener] Initializing rdev loop...");
-        
-        // Reverting to listen for all platforms. 
-        // We use spawn_blocking to ensure it has proper system context.
-        if let Err(error) = rdev::listen(move |event| {
-            handle_event(&event, &app_handle, &is_focused_flag, &enabled);
-        }) {
-            log_debug(&format!("[Listener] FATAL Error: {:?}", error));
+    thread::spawn(move || {
+        // [macOS Reliability]
+        #[cfg(target_os = "macos")]
+        {
+            log_debug("[Listener] macOS: Waiting for app stabilization...");
+            thread::sleep(std::time::Duration::from_millis(1000));
+            log_debug("[Listener] macOS: Starting 'grab' with crash guards...");
+            
+            let h_app = app_handle.clone();
+            let h_focus = is_focused_flag.clone();
+            let h_enabled = enabled.clone();
+
+            let result = std::panic::catch_unwind(move || {
+                if let Err(error) = rdev::grab(move |event| {
+                    handle_event(&event, &h_app, &h_focus, &h_enabled);
+                    
+                    // Filter out modifier keys that cause rdev panics when grabbed
+                    if let EventType::KeyPress(key) = event.event_type {
+                        match key {
+                           Key::ControlLeft | Key::ControlRight | Key::ShiftLeft | Key::ShiftRight | 
+                           Key::Alt | Key::AltGr | Key::MetaLeft | Key::MetaRight | Key::Function => {
+                               return Some(event);
+                           },
+                           _ => {}
+                        }
+                    }
+                    Some(event)
+                }) {
+                    log_debug(&format!("[Listener] macOS grab error: {:?}", error));
+                }
+            });
+            
+            if result.is_err() {
+                log_debug("[Listener] macOS: Recovered from a grab panic!");
+            }
+        }
+
+        // [Windows/Linux]
+        #[cfg(not(target_os = "macos"))]
+        {
+            log_debug("[Listener] Starting standard 'listen' loop");
+            if let Err(error) = rdev::listen(move |event| {
+                handle_event(&event, &app_handle, &is_focused_flag, &enabled);
+            }) {
+                log_debug(&format!("[Listener] Error: {:?}", error));
+            }
         }
     });
 }
@@ -305,6 +339,11 @@ fn handle_event(
             Key::KeyC => Some("C"),
             Key::KeyV => Some("V"),
             Key::Space => Some("SPACE"),
+            // Modifier keys - specifically skip to avoid rdev crashes on macOS
+            Key::ControlLeft | Key::ControlRight | Key::ShiftLeft | Key::ShiftRight | 
+            Key::Alt | Key::AltGr | Key::MetaLeft | Key::MetaRight | Key::Function => {
+                return;
+            },
             _ => None,
         };
 
