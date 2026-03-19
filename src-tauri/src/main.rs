@@ -70,8 +70,10 @@ pub const IS_COMMUNITY_BUILD: bool = false; // I am just sitting here
 // ============================================================================
 
 fn log_debug(msg: &str) {
-    if let Some(config_dir) = dirs::config_dir() {
-        let log_file = config_dir.join("lsamp-100").join("consonance.log");
+    if let Some(dir) = dirs::data_dir().or_else(|| dirs::config_dir()) {
+        let app_dir = dir.join("lsamp-100");
+        let _ = std::fs::create_dir_all(&app_dir);
+        let log_file = app_dir.join("consonance.log");
         if let Ok(mut file) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -200,31 +202,37 @@ fn muzzle_system_sounds(_mute: bool, _app_handle: &tauri::AppHandle) {
 
     #[cfg(target_os = "windows")]
     {
+        log_debug(&format!("[Muzzle] Windows muzzle intent: {}", _mute));
         // On Windows, we find the "System Sounds" audio session and mute it.
         thread::spawn(move || unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
             let enumerator: IMMDeviceEnumerator = match CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) {
                 Ok(e) => e,
-                Err(_) => return,
+                Err(e) => { log_debug(&format!("[Muzzle] ERR: CoCreateInstance failed: {:?}", e)); return; },
             };
             let device: IMMDevice = match enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia) {
                 Ok(d) => d,
-                Err(_) => return,
+                Err(e) => { log_debug(&format!("[Muzzle] ERR: GetDefaultAudioEndpoint failed: {:?}", e)); return; },
             };
             let manager: IAudioSessionManager2 = match device.Activate(CLSCTX_ALL, None) {
                 Ok(m) => m,
-                Err(_) => return,
+                Err(e) => { log_debug(&format!("[Muzzle] ERR: Activate failed: {:?}", e)); return; },
             };
             if let Ok(session_enumerator) = manager.GetSessionEnumerator() {
                 let count = session_enumerator.GetCount().unwrap_or(0);
+                log_debug(&format!("[Muzzle] Found {} audio sessions", count));
                 for i in 0..count {
                     if let Ok(session) = session_enumerator.GetSession(i) {
                         if let Ok(session2) = session.cast::<IAudioSessionControl2>() {
                             if let Ok(name) = session2.GetSessionIdentifier() {
-                                if name.to_string().unwrap_or_default().contains("SystemSounds") {
+                                let name_str = name.to_string().unwrap_or_default();
+                                // Log every session we see to find the right one
+                                // log_debug(&format!("[Muzzle] Session {}: {}", i, name_str));
+                                
+                                if name_str.contains("SystemSounds") {
                                     if let Ok(volume) = session.cast::<ISimpleAudioVolume>() {
                                         let _ = volume.SetMute(_mute, std::ptr::null());
-                                        log_debug(&format!("[Muzzle] Windows System Sounds Mute set to: {}", _mute));
+                                        log_debug(&format!("[Muzzle] SUCCESS: Windows System Sounds Mute set to: {}", _mute));
                                     }
                                 }
                             }
