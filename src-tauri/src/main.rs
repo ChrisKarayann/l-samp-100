@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::{AppHandle, Emitter, Manager, State};
+use std::io::Write;
 
 #[cfg(target_os = "windows")]
 use windows::Win32::Media::Audio::{
@@ -63,6 +64,24 @@ pub struct AppConfig {
 }
 
 pub const IS_COMMUNITY_BUILD: bool = false; // I am just sitting here
+
+// ============================================================================
+// LOGGING UTILITY
+// ============================================================================
+
+fn log_debug(msg: &str) {
+    if let Some(config_dir) = dirs::config_dir() {
+        let log_file = config_dir.join("lsamp-100").join("consonance.log");
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_file)
+        {
+            let _ = writeln!(file, "[{}] {}", chrono::Local::now().format("%H:%M:%S"), msg);
+        }
+    }
+    println!("{}", msg);
+}
 
 // ============================================================================
 // STATE MANAGEMENT
@@ -127,7 +146,7 @@ fn main() {
             if let tauri::WindowEvent::Focused(focused) = event {
                 let registry = window.state::<HotkeyRegistry>();
                 registry.is_focused.store(*focused, Ordering::SeqCst);
-                println!("[Focus] Main window focused: {}", focused);
+                log_debug(&format!("[Focus] Main window focused: {}", focused));
             }
         })
         .run(tauri::generate_context!())
@@ -157,7 +176,7 @@ fn muzzle_system_sounds(_mute: bool, _app_handle: &tauri::AppHandle) {
                 if let Ok(vol) = vol_str.parse::<i32>() {
                     let mut prev = registry.previous_alert_volume.lock().unwrap();
                     *prev = Some(vol);
-                    println!("[Muzzle] Stored previous alert volume: {}", vol);
+                    log_debug(&format!("[Muzzle] Stored previous alert volume: {}", vol));
                 }
             }
 
@@ -165,7 +184,7 @@ fn muzzle_system_sounds(_mute: bool, _app_handle: &tauri::AppHandle) {
                 .arg("-e")
                 .arg("set volume alert volume 0")
                 .spawn();
-            println!("[Muzzle] macOS Alert Volume set to 0");
+            log_debug("[Muzzle] macOS Alert Volume set to 0");
         } else {
             // Restore previous volume
             let mut prev = registry.previous_alert_volume.lock().unwrap();
@@ -175,7 +194,7 @@ fn muzzle_system_sounds(_mute: bool, _app_handle: &tauri::AppHandle) {
                 .arg(format!("set volume alert volume {}", vol_to_restore))
                 .spawn();
             *prev = None;
-            println!("[Muzzle] macOS Alert Volume restored to {}", vol_to_restore);
+            log_debug(&format!("[Muzzle] macOS Alert Volume restored to {}", vol_to_restore));
         }
     }
 
@@ -205,7 +224,7 @@ fn muzzle_system_sounds(_mute: bool, _app_handle: &tauri::AppHandle) {
                                 if name.to_string().unwrap_or_default().contains("SystemSounds") {
                                     if let Ok(volume) = session.cast::<ISimpleAudioVolume>() {
                                         let _ = volume.SetMute(_mute, std::ptr::null());
-                                        println!("[Muzzle] Windows System Sounds Mute set to: {}", _mute);
+                                        log_debug(&format!("[Muzzle] Windows System Sounds Mute set to: {}", _mute));
                                     }
                                 }
                             }
@@ -270,7 +289,7 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
                             let is_focused = is_focused_flag.load(Ordering::Relaxed);
                             
                             // Debug logging to help identify if events reach Rust
-                            println!("[Rust Hook] Key: {}, Focused: {}", k, is_focused);
+                            log_debug(&format!("[Rust Hook] Key: {}, Focused: {}", k, is_focused));
 
                             if !is_focused {
                                 if let Ok(res) = audio.toggle_sound_direct(k_string) {
