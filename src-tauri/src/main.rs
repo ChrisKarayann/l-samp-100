@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::{AppHandle, Emitter, Manager, State};
 use std::io::Write;
+use std::sync::mpsc::{channel, Sender};
 
 #[cfg(target_os = "windows")]
 use windows::Win32::Media::Audio::{
@@ -262,53 +263,32 @@ fn muzzle_system_sounds(mute: bool, app_handle: &tauri::AppHandle) {
 fn start_background_listener(app_handle: tauri::AppHandle) {
     let is_focused_flag = Arc::clone(&app_handle.state::<HotkeyRegistry>().is_focused);
     let enabled = Arc::clone(&app_handle.state::<HotkeyRegistry>().enabled);
+    
+    // Create a channel to move event processing OFF the high-priority keyboard thread.
+    // This is CRITICAL for macOS stability (avoids EventTap timeouts/crashes).
+    let (tx, rx) = channel::<rdev::Event>();
 
+    // Thread 1: The Processor (handles audio and logging)
+    let p_handle = app_handle.clone();
+    let p_focus = is_focused_flag.clone();
+    let p_enabled = enabled.clone();
     thread::spawn(move || {
-        // [macOS Reliability]
-        #[cfg(target_os = "macos")]
-        {
-            log_debug("[Listener] macOS: Waiting for app stabilization...");
-            thread::sleep(std::time::Duration::from_millis(1000));
-            log_debug("[Listener] macOS: Starting 'grab' with crash guards...");
-            
-            let h_app = app_handle.clone();
-            let h_focus = is_focused_flag.clone();
-            let h_enabled = enabled.clone();
-
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-                if let Err(error) = rdev::grab(move |event| {
-                    handle_event(&event, &h_app, &h_focus, &h_enabled);
-                    
-                    // Filter out modifier keys that cause rdev panics when grabbed
-                    if let EventType::KeyPress(key) = event.event_type {
-                        match key {
-                           Key::ControlLeft | Key::ControlRight | Key::ShiftLeft | Key::ShiftRight | 
-                           Key::Alt | Key::AltGr | Key::MetaLeft | Key::MetaRight | Key::Function => {
-                               return Some(event);
-                           },
-                           _ => {}
-                        }
-                    }
-                    Some(event)
-                }) {
-                    log_debug(&format!("[Listener] macOS grab error: {:?}", error));
-                }
-            }));
-            
-            if result.is_err() {
-                log_debug("[Listener] macOS: Recovered from a grab panic!");
-            }
+        log_debug("[Listener] Processor thread started");
+        while let Ok(event) = rx.recv() {
+            handle_event(&event, &p_handle, &p_focus, &p_enabled);
         }
+    });
 
-        // [Windows/Linux]
-        #[cfg(not(target_os = "macos"))]
-        {
-            log_debug("[Listener] Starting standard 'listen' loop");
-            if let Err(error) = rdev::listen(move |event| {
-                handle_event(&event, &app_handle, &is_focused_flag, &enabled);
-            }) {
-                log_debug(&format!("[Listener] Error: {:?}", error));
-            }
+    // Thread 2: The Listener (purely for tapping keys)
+    thread::spawn(move || {
+        log_debug("[Listener] Initializing rdev loop...");
+        
+        let tx_tap = tx.clone();
+        if let Err(error) = rdev::listen(move |event| {
+            // Send the event immediately and return. DO NOT do any work here.
+            let _ = tx_tap.send(event);
+        }) {
+            log_debug(&format!("[Listener] FATAL Error: {:?}", error));
         }
     });
 }
