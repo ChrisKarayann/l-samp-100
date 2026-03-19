@@ -3,7 +3,7 @@
     windows_subsystem = "windows"
 )]
 
-use rdev::{listen as rdev_listen, EventType, Key};
+use rdev::{EventType, Key};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -131,11 +131,11 @@ fn main() {
 /// Muzzle system notification sounds briefly to prevent the "beep" on Windows/macOS
 /// without capturing the keyboard events globally.
 /// Muzzle system notification sounds persistently while sensing is active.
-fn muzzle_system_sounds(mute: bool, app_handle: &tauri::AppHandle) {
+fn muzzle_system_sounds(_mute: bool, _app_handle: &tauri::AppHandle) {
     #[cfg(target_os = "macos")]
     {
-        let registry = app_handle.state::<HotkeyRegistry>();
-        if mute {
+        let registry = _app_handle.state::<HotkeyRegistry>();
+        if _mute {
             // Store current volume before muting
             let output = std::process::Command::new("osascript")
                 .arg("-e")
@@ -191,7 +191,7 @@ fn muzzle_system_sounds(mute: bool, app_handle: &tauri::AppHandle) {
                             if let Ok(name) = session2.GetSessionIdentifier() {
                                 if name.to_string().unwrap_or_default().contains("SystemSounds") {
                                     if let Ok(volume) = session.cast::<ISimpleAudioVolume>() {
-                                        let _ = volume.SetMute(mute, std::ptr::null());
+                                        let _ = volume.SetMute(_mute, std::ptr::null());
                                     }
                                 }
                             }
