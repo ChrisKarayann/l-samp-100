@@ -15,8 +15,10 @@ use tauri::{AppHandle, Emitter, Manager, State};
 #[cfg(target_os = "windows")]
 use windows::Win32::Media::Audio::{
     IAudioSessionControl2, IAudioSessionManager2, ISimpleAudioVolume, MMDeviceEnumerator,
-    MMDeviceEnumerator as MMDeviceEnumeratorType, eRender, eMultimedia,
+    IMMDeviceEnumerator, eRender, eMultimedia,
 };
+#[cfg(target_os = "windows")]
+use windows::core::Interface;
 #[cfg(target_os = "windows")]
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
 
@@ -143,17 +145,17 @@ fn muzzle_system_sounds(_mute: bool) {
         // This requires COM initialization.
         thread::spawn(move || unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-            if let Ok(enumerator) = CoCreateInstance::<_, MMDeviceEnumerator>(&MMDeviceEnumeratorType, None, CLSCTX_ALL) {
+            if let Ok(enumerator) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) {
                 if let Ok(device) = enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia) {
                     if let Ok(manager) = device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) {
-                        if let Ok(enumerator) = manager.GetSessionEnumerator() {
-                            let count = enumerator.GetCount().unwrap_or(0);
+                        if let Ok(session_enumerator) = manager.GetSessionEnumerator() {
+                            let count = session_enumerator.GetCount().unwrap_or(0);
                             for i in 0..count {
-                                if let Ok(session) = enumerator.GetSession(i) {
-                                    if let Ok(session2) = session.QueryInterface::<IAudioSessionControl2>() {
+                                if let Ok(session) = session_enumerator.GetSession(i) {
+                                    if let Ok(session2) = session.cast::<IAudioSessionControl2>() {
                                         if let Ok(name) = session2.GetSessionIdentifier() {
                                             if name.to_string().contains("SystemSounds") {
-                                                if let Ok(volume) = session.QueryInterface::<ISimpleAudioVolume>() {
+                                                if let Ok(volume) = session.cast::<ISimpleAudioVolume>() {
                                                     let _ = volume.SetMute(_mute, std::ptr::null());
                                                 }
                                             }
