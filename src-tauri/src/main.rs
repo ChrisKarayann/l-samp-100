@@ -231,14 +231,14 @@ fn muzzle_system_sounds(mute: bool, app_handle: &tauri::AppHandle) {
                         if let Ok(session2) = session.cast::<IAudioSessionControl2>() {
                             if let Ok(name) = session2.GetSessionIdentifier() {
                                 let name_str = name.to_string().unwrap_or_default();
-                                // Log every session we see to identify the correct target
-                                log_debug(&format!("[Muzzle-TX] Session: '{}'", name_str));
+                                log_debug(&format!("[Muzzle-TX] Checking session: '{}'", name_str));
                                 
-                                // On many systems, it's "SystemSounds", on others maybe something else?
-                                if name_str.contains("SystemSounds") || name_str.is_empty() {
+                                // THE SLEDGEHAMMER: Mute every session that is NOT our own.
+                                // This is the only way to reliably catch all system dings across different Windows versions.
+                                if !name_str.contains("lsamp-100.exe") {
                                     if let Ok(volume) = session.cast::<ISimpleAudioVolume>() {
                                         let _ = volume.SetMute(mute, std::ptr::null());
-                                        log_debug(&format!("[Muzzle-TX] SUCCESS: Muted session: '{}'", name_str));
+                                        log_debug(&format!("[Muzzle-TX] SUCCESS: Muted external session: '{}'", name_str));
                                     }
                                 }
                             }
@@ -264,30 +264,17 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
     let is_focused_flag = Arc::clone(&app_handle.state::<HotkeyRegistry>().is_focused);
     let enabled = Arc::clone(&app_handle.state::<HotkeyRegistry>().enabled);
 
-    thread::spawn(move || {
-        // [macOS Fix] On macOS, standard 'listen' often stalls in the background.
-        // We use 'grab' (from unstable features) to ensure an active tap status.
-        // We ALWAYS return Some(event) to pass the key through to other apps.
-        #[cfg(target_os = "macos")]
-        {
-            log_debug("[Listener] Starting macOS 'grab' loop");
-            if let Err(error) = rdev::grab(move |event| {
-                handle_event(&event, &app_handle, &is_focused_flag, &enabled);
-                Some(event)
-            }) {
-                log_debug(&format!("[Listener] macOS Error: {:?}", error));
-            }
-        }
-
-        // [Linux/Windows] 'listen' works reliably for background monitoring.
-        #[cfg(not(target_os = "macos"))]
-        {
-            log_debug("[Listener] Starting standard 'listen' loop");
-            if let Err(error) = rdev::listen(move |event| {
-                handle_event(&event, &app_handle, &is_focused_flag, &enabled);
-            }) {
-                log_debug(&format!("[Listener] Error: {:?}", error));
-            }
+    // [Reliability Fix] Use tauri's async runtime for the listener thread
+    // as it manages platform-specific capabilities better on macOS.
+    tauri::async_runtime::spawn_blocking(move || {
+        log_debug("[Listener] Initializing rdev loop...");
+        
+        // Reverting to listen for all platforms. 
+        // We use spawn_blocking to ensure it has proper system context.
+        if let Err(error) = rdev::listen(move |event| {
+            handle_event(&event, &app_handle, &is_focused_flag, &enabled);
+        }) {
+            log_debug(&format!("[Listener] FATAL Error: {:?}", error));
         }
     });
 }
