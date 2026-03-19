@@ -3,7 +3,7 @@
     windows_subsystem = "windows"
 )]
 
-use rdev::{listen as rdev_listen, EventType, Key};
+use rdev::{EventType, Key};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -272,7 +272,7 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
         {
             log_debug("[Listener] Starting macOS 'grab' loop");
             if let Err(error) = rdev::grab(move |event| {
-                handle_event(event, &app_handle, &is_focused_flag, &enabled);
+                handle_event(&event, &app_handle, &is_focused_flag, &enabled);
                 Some(event)
             }) {
                 log_debug(&format!("[Listener] macOS Error: {:?}", error));
@@ -283,8 +283,8 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
         #[cfg(not(target_os = "macos"))]
         {
             log_debug("[Listener] Starting standard 'listen' loop");
-            if let Err(error) = rdev_listen(move |event| {
-                handle_event(event, &app_handle, &is_focused_flag, &enabled);
+            if let Err(error) = rdev::listen(move |event| {
+                handle_event(&event, &app_handle, &is_focused_flag, &enabled);
             }) {
                 log_debug(&format!("[Listener] Error: {:?}", error));
             }
@@ -294,7 +294,7 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
 
 /// Common event handler for both grab and listen
 fn handle_event(
-    event: rdev::Event, 
+    event: &rdev::Event, 
     app_handle: &tauri::AppHandle, 
     is_focused_flag: &Arc<AtomicBool>, 
     enabled: &Arc<AtomicBool>
