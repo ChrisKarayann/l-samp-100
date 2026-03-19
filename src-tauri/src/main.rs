@@ -18,7 +18,7 @@ use windows::Win32::Media::Audio::{
     IMMDeviceEnumerator, IMMDevice, eRender, eMultimedia,
 };
 #[cfg(target_os = "windows")]
-use windows::core::Interface;
+use windows::core::ComInterface;
 #[cfg(target_os = "windows")]
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
 
@@ -153,7 +153,7 @@ fn muzzle_system_sounds(_mute: bool) {
                 Ok(d) => d,
                 Err(_) => return,
             };
-            let manager: IAudioSessionManager2 = match device.Activate(CLSCTX_ALL, None) {
+            let manager: IAudioSessionManager2 = match device.Activate(CLSCTX_ALL, std::ptr::null()) {
                 Ok(m) => m,
                 Err(_) => return,
             };
