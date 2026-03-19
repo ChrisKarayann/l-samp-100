@@ -12,6 +12,14 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+#[cfg(target_os = "windows")]
+use windows::Win32::Media::Audio::{
+    IAudioSessionControl2, IAudioSessionManager2, ISimpleAudioVolume, MMDeviceEnumerator,
+    MMDeviceEnumerator as MMDeviceEnumeratorType, eRender, eMultimedia,
+};
+#[cfg(target_os = "windows")]
+use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
+
 mod audio_engine;
 
 use crate::audio_engine::{AudioEngine, LevelsResponse, LoadResult};
@@ -112,6 +120,56 @@ fn main() {
 }
 
 // ============================================================================
+// SYSTEM SOUND MUZZLING (The Clever Trick)
+// ============================================================================
+
+/// Muzzle system notification sounds briefly to prevent the "beep" on Windows/macOS
+/// without capturing the keyboard events globally.
+fn muzzle_system_sounds(_mute: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, "alert volume" is separate from master volume.
+        // We set it to 0 to silence the "Funk/Basso" beep.
+        let volume = if _mute { 0 } else { 75 };
+        let _ = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(format!("set volume alert volume {}", volume))
+            .spawn();
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, we find the "System Sounds" audio session and mute it.
+        // This requires COM initialization.
+        thread::spawn(move || unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+            if let Ok(enumerator) = CoCreateInstance::<_, MMDeviceEnumerator>(&MMDeviceEnumeratorType, None, CLSCTX_ALL) {
+                if let Ok(device) = enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia) {
+                    if let Ok(manager) = device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) {
+                        if let Ok(enumerator) = manager.GetSessionEnumerator() {
+                            let count = enumerator.GetCount().unwrap_or(0);
+                            for i in 0..count {
+                                if let Ok(session) = enumerator.GetSession(i) {
+                                    if let Ok(session2) = session.QueryInterface::<IAudioSessionControl2>() {
+                                        if let Ok(name) = session2.GetSessionIdentifier() {
+                                            if name.to_string().contains("SystemSounds") {
+                                                if let Ok(volume) = session.QueryInterface::<ISimpleAudioVolume>() {
+                                                    let _ = volume.SetMute(_mute, std::ptr::null());
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+// ============================================================================
 // GLOBAL BACKGROUND LISTENER (using rdev)
 // ============================================================================
 
@@ -120,6 +178,9 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
     let enabled = Arc::clone(&app_handle.state::<HotkeyRegistry>().enabled);
 
     thread::spawn(move || {
+        // [macOS Fix] On macOS, we ensure the thread's event tap has a chance 
+        // to initialize correctly by running the loop directly. 
+        // rdev::listen handles the CFRunLoop internally on macOS.
         rdev_listen(move |event| {
             if !enabled.load(Ordering::Relaxed) {
                 return;
@@ -156,11 +217,8 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
                     let k_string = k.to_string();
 
                     // --- DIRECT TRIGGERING (The Fix) ---
-                    // By triggering here in Rust, we bypass the Frontend Webview's
-                    // event loop, so the audio plays even if the app is minimized.
                     let audio = app_handle.state::<audio_engine::AudioEngine>();
 
-                    // Enforce Community Build restrictions for global triggers
                     let mut permitted = true;
                     if IS_COMMUNITY_BUILD && !["Q", "W", "E", "R"].contains(&k) {
                         permitted = false;
@@ -173,23 +231,29 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
                             audio.stop_all();
                         } else {
                             // --- FOCUS CHECK ---
-                            // Only trigger from background if the main window is NOT focused.
-                            // If focused, the frontend's native listeners handle it.
                             let is_focused = app_handle
                                 .get_webview_window("main")
                                 .map(|w| w.is_focused().unwrap_or(false))
                                 .unwrap_or(false);
 
                             if !is_focused {
+                                // [The Clever Trick] Briefly muzzle system sounds to kill the beep
+                                muzzle_system_sounds(true);
+                                
                                 if let Ok(res) = audio.toggle_sound_direct(k_string) {
                                     is_playing = Some(res);
                                 }
+
+                                // Restore sound after a tiny pulse (100ms) to ensure OS beep window has passed
+                                thread::spawn(|| {
+                                    thread::sleep(std::time::Duration::from_millis(100));
+                                    muzzle_system_sounds(false);
+                                });
                             }
                         }
                     }
 
                     // We still emit the event so the Frontend can update its visuals
-                    // (LED pulses, etc.) whenever it wakes up.
                     let _ = app_handle.emit("global-key-press", GlobalKeyPayload { 
                         key: k.to_string(), 
                         is_playing 
@@ -197,7 +261,7 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
                 }
             }
         })
-        .expect("[Consonance] Could not spy on keyboard");
+        .expect("[Consonance] Could not spy on keyboard listener loop");
     });
 }
 
