@@ -275,7 +275,7 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
             let h_focus = is_focused_flag.clone();
             let h_enabled = enabled.clone();
 
-            let result = std::panic::catch_unwind(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
                 if let Err(error) = rdev::grab(move |event| {
                     handle_event(&event, &h_app, &h_focus, &h_enabled);
                     
@@ -293,7 +293,7 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
                 }) {
                     log_debug(&format!("[Listener] macOS grab error: {:?}", error));
                 }
-            });
+            }));
             
             if result.is_err() {
                 log_debug("[Listener] macOS: Recovered from a grab panic!");
