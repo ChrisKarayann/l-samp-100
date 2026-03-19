@@ -3,7 +3,7 @@
     windows_subsystem = "windows"
 )]
 
-use rdev::{EventType, Key};
+use rdev::{listen as rdev_listen, EventType, Key};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -45,6 +45,8 @@ pub struct HotkeyRegistry {
     pub registrations: Mutex<Vec<String>>,
     /// Previous alert volume on macOS (to restore later)
     pub previous_alert_volume: Mutex<Option<i32>>,
+    /// Tracks if the main window is currently focused
+    pub is_focused: Arc<AtomicBool>,
 }
 
 #[derive(Clone, Serialize)]
@@ -78,6 +80,7 @@ fn main() {
             enabled: Arc::new(AtomicBool::new(true)),
             registrations: Mutex::new(Vec::new()),
             previous_alert_volume: Mutex::new(None),
+            is_focused: Arc::new(AtomicBool::new(true)),
         })
         .manage(AudioEngine::new().expect("Failed to initialize audio engine"))
         .invoke_handler(tauri::generate_handler![
@@ -119,6 +122,13 @@ fn main() {
             }
 
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Focused(focused) = event {
+                let registry = window.state::<HotkeyRegistry>();
+                registry.is_focused.store(*focused, Ordering::SeqCst);
+                // println!("[Focus] Main window focused: {}", focused);
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -209,47 +219,37 @@ fn muzzle_system_sounds(_mute: bool, _app_handle: &tauri::AppHandle) {
 
 /// Start the background keyboard listener in a separate thread
 fn start_background_listener(app_handle: tauri::AppHandle) {
+    let is_focused_flag = Arc::clone(&app_handle.state::<HotkeyRegistry>().is_focused);
     let enabled = Arc::clone(&app_handle.state::<HotkeyRegistry>().enabled);
 
     thread::spawn(move || {
-        // [macOS Fix] Use grab instead of listen to ensure more robust background 
-        // triggering on macOS. Always return Some(event) to avoid capturing.
-        if let Err(error) = rdev::grab(move |event| {
+        // [Reliability Fix] Reverting to listen for better stability across platforms.
+        // We use a pre-tracked focus flag to ensure zero-latency checks.
+        if let Err(error) = rdev_listen(move |event| {
             if !enabled.load(Ordering::Relaxed) {
-                return Some(event);
+                return;
             }
 
             if let EventType::KeyPress(key) = event.event_type {
-                // Map rdev Key to a String for Angular
                 let key_str = match key {
-                    // Row 1
                     Key::KeyQ => Some("Q"),
                     Key::KeyW => Some("W"),
                     Key::KeyE => Some("E"),
                     Key::KeyR => Some("R"),
-
-                    // Row 2
                     Key::KeyA => Some("A"),
                     Key::KeyS => Some("S"),
                     Key::KeyD => Some("D"),
                     Key::KeyF => Some("F"),
-
-                    // Row 3
                     Key::KeyZ => Some("Z"),
                     Key::KeyX => Some("X"),
                     Key::KeyC => Some("C"),
                     Key::KeyV => Some("V"),
-
-                    // Global Stop
                     Key::Space => Some("SPACE"),
-
                     _ => None,
                 };
 
                 if let Some(k) = key_str {
                     let k_string = k.to_string();
-
-                    // --- DIRECT TRIGGERING ---
                     let audio = app_handle.state::<audio_engine::AudioEngine>();
 
                     let mut permitted = true;
@@ -263,15 +263,12 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
                         if k == "SPACE" {
                             audio.stop_all();
                         } else {
-                            // --- FOCUS CHECK ---
-                            let is_focused = app_handle
-                                .get_webview_window("main")
-                                .map(|w| w.is_focused().unwrap_or(false))
-                                .unwrap_or(false);
+                            let is_focused = is_focused_flag.load(Ordering::Relaxed);
+                            
+                            // Debug logging to help identify if events reach Rust
+                            // println!("[Rust Hook] Key: {}, Focused: {}", k, is_focused);
 
                             if !is_focused {
-                                // [Persistent Muzzle Fix] We no longer call muzzle here.
-                                // It is now handled once in toggle_listener for zero latency.
                                 if let Ok(res) = audio.toggle_sound_direct(k_string) {
                                     is_playing = Some(res);
                                 }
@@ -279,14 +276,12 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
                         }
                     }
 
-                    // We still emit the event so the Frontend can update its visuals
                     let _ = app_handle.emit("global-key-press", GlobalKeyPayload { 
                         key: k.to_string(), 
                         is_playing 
                     });
                 }
             }
-            Some(event)
         }) {
             eprintln!("[Consonance] Loop Error: {:?}", error);
         }
