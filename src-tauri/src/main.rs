@@ -15,7 +15,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 #[cfg(target_os = "windows")]
 use windows::Win32::Media::Audio::{
     IAudioSessionControl2, IAudioSessionManager2, ISimpleAudioVolume, MMDeviceEnumerator,
-    IMMDeviceEnumerator, eRender, eMultimedia,
+    IMMDeviceEnumerator, IMMDevice, eRender, eMultimedia,
 };
 #[cfg(target_os = "windows")]
 use windows::core::Interface;
@@ -145,21 +145,27 @@ fn muzzle_system_sounds(_mute: bool) {
         // This requires COM initialization.
         thread::spawn(move || unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-            if let Ok(enumerator) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) {
-                if let Ok(device) = enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia) {
-                    if let Ok(manager) = device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) {
-                        if let Ok(session_enumerator) = manager.GetSessionEnumerator() {
-                            let count = session_enumerator.GetCount().unwrap_or(0);
-                            for i in 0..count {
-                                if let Ok(session) = session_enumerator.GetSession(i) {
-                                    if let Ok(session2) = session.cast::<IAudioSessionControl2>() {
-                                        if let Ok(name) = session2.GetSessionIdentifier() {
-                                            if name.to_string().contains("SystemSounds") {
-                                                if let Ok(volume) = session.cast::<ISimpleAudioVolume>() {
-                                                    let _ = volume.SetMute(_mute, std::ptr::null());
-                                                }
-                                            }
-                                        }
+            let enumerator: IMMDeviceEnumerator = match CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) {
+                Ok(e) => e,
+                Err(_) => return,
+            };
+            let device: IMMDevice = match enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia) {
+                Ok(d) => d,
+                Err(_) => return,
+            };
+            let manager: IAudioSessionManager2 = match device.Activate(CLSCTX_ALL, None) {
+                Ok(m) => m,
+                Err(_) => return,
+            };
+            if let Ok(session_enumerator) = manager.GetSessionEnumerator() {
+                let count = session_enumerator.GetCount().unwrap_or(0);
+                for i in 0..count {
+                    if let Ok(session) = session_enumerator.GetSession(i) {
+                        if let Ok(session2) = session.cast::<IAudioSessionControl2>() {
+                            if let Ok(name) = session2.GetSessionIdentifier() {
+                                if name.to_string().contains("SystemSounds") {
+                                    if let Ok(volume) = session.cast::<ISimpleAudioVolume>() {
+                                        let _ = volume.SetMute(_mute, std::ptr::null());
                                     }
                                 }
                             }
