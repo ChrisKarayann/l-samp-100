@@ -163,7 +163,7 @@ fn muzzle_system_sounds(_mute: bool) {
                     if let Ok(session) = session_enumerator.GetSession(i) {
                         if let Ok(session2) = session.cast::<IAudioSessionControl2>() {
                             if let Ok(name) = session2.GetSessionIdentifier() {
-                                if name.to_string().contains("SystemSounds") {
+                                if name.to_string().unwrap_or_default().contains("SystemSounds") {
                                     if let Ok(volume) = session.cast::<ISimpleAudioVolume>() {
                                         let _ = volume.SetMute(_mute, std::ptr::null());
                                     }
