@@ -15,7 +15,7 @@ tauri = { version = "2", features = ["devtools"] }
 # Optional: global shortcut plugin (uncomment and set correct version when enabling)
 # tauri-plugin-global-shortcut = "0.1"
 cpal = "0.15"
-rdev = "0.5"
+rdev = { version = "0.5", features = ["unstable_grab"] }
 symphonia = { version = "0.5", features = ["all"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }

@@ -231,13 +231,14 @@ fn muzzle_system_sounds(mute: bool, app_handle: &tauri::AppHandle) {
                         if let Ok(session2) = session.cast::<IAudioSessionControl2>() {
                             if let Ok(name) = session2.GetSessionIdentifier() {
                                 let name_str = name.to_string().unwrap_or_default();
-                                // Log every session we see to find the right one
-                                // log_debug(&format!("[Muzzle] Session {}: {}", i, name_str));
+                                // Log every session we see to identify the correct target
+                                log_debug(&format!("[Muzzle-TX] Session: '{}'", name_str));
                                 
-                                if name_str.contains("SystemSounds") {
+                                // On many systems, it's "SystemSounds", on others maybe something else?
+                                if name_str.contains("SystemSounds") || name_str.is_empty() {
                                     if let Ok(volume) = session.cast::<ISimpleAudioVolume>() {
                                         let _ = volume.SetMute(mute, std::ptr::null());
-                                        log_debug(&format!("[Muzzle-TX] SUCCESS: Windows System Sounds Mute set to: {}", mute));
+                                        log_debug(&format!("[Muzzle-TX] SUCCESS: Muted session: '{}'", name_str));
                                     }
                                 }
                             }
@@ -264,69 +265,94 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
     let enabled = Arc::clone(&app_handle.state::<HotkeyRegistry>().enabled);
 
     thread::spawn(move || {
-        // [Reliability Fix] Reverting to listen for better stability across platforms.
-        // We use a pre-tracked focus flag to ensure zero-latency checks.
-        if let Err(error) = rdev_listen(move |event| {
-            if !enabled.load(Ordering::Relaxed) {
-                return;
+        // [macOS Fix] On macOS, standard 'listen' often stalls in the background.
+        // We use 'grab' (from unstable features) to ensure an active tap status.
+        // We ALWAYS return Some(event) to pass the key through to other apps.
+        #[cfg(target_os = "macos")]
+        {
+            log_debug("[Listener] Starting macOS 'grab' loop");
+            if let Err(error) = rdev::grab(move |event| {
+                handle_event(event, &app_handle, &is_focused_flag, &enabled);
+                Some(event)
+            }) {
+                log_debug(&format!("[Listener] macOS Error: {:?}", error));
             }
+        }
 
-            if let EventType::KeyPress(key) = event.event_type {
-                let key_str = match key {
-                    Key::KeyQ => Some("Q"),
-                    Key::KeyW => Some("W"),
-                    Key::KeyE => Some("E"),
-                    Key::KeyR => Some("R"),
-                    Key::KeyA => Some("A"),
-                    Key::KeyS => Some("S"),
-                    Key::KeyD => Some("D"),
-                    Key::KeyF => Some("F"),
-                    Key::KeyZ => Some("Z"),
-                    Key::KeyX => Some("X"),
-                    Key::KeyC => Some("C"),
-                    Key::KeyV => Some("V"),
-                    Key::Space => Some("SPACE"),
-                    _ => None,
-                };
-
-                if let Some(k) = key_str {
-                    let k_string = k.to_string();
-                    let audio = app_handle.state::<audio_engine::AudioEngine>();
-
-                    let mut permitted = true;
-                    if IS_COMMUNITY_BUILD && !["Q", "W", "E", "R"].contains(&k) {
-                        permitted = false;
-                    }
-
-                    let mut is_playing = None;
-
-                    if permitted {
-                        if k == "SPACE" {
-                            audio.stop_all();
-                        } else {
-                            let is_focused = is_focused_flag.load(Ordering::Relaxed);
-                            
-                            // Debug logging to help identify if events reach Rust
-                            log_debug(&format!("[Rust Hook] Key: {}, Focused: {}", k, is_focused));
-
-                            if !is_focused {
-                                if let Ok(res) = audio.toggle_sound_direct(k_string) {
-                                    is_playing = Some(res);
-                                }
-                            }
-                        }
-                    }
-
-                    let _ = app_handle.emit("global-key-press", GlobalKeyPayload { 
-                        key: k.to_string(), 
-                        is_playing 
-                    });
-                }
+        // [Linux/Windows] 'listen' works reliably for background monitoring.
+        #[cfg(not(target_os = "macos"))]
+        {
+            log_debug("[Listener] Starting standard 'listen' loop");
+            if let Err(error) = rdev_listen(move |event| {
+                handle_event(event, &app_handle, &is_focused_flag, &enabled);
+            }) {
+                log_debug(&format!("[Listener] Error: {:?}", error));
             }
-        }) {
-            eprintln!("[Consonance] Loop Error: {:?}", error);
         }
     });
+}
+
+/// Common event handler for both grab and listen
+fn handle_event(
+    event: rdev::Event, 
+    app_handle: &tauri::AppHandle, 
+    is_focused_flag: &Arc<AtomicBool>, 
+    enabled: &Arc<AtomicBool>
+) {
+    if !enabled.load(Ordering::Relaxed) {
+        return;
+    }
+
+    if let EventType::KeyPress(key) = event.event_type {
+        let key_str = match key {
+            Key::KeyQ => Some("Q"),
+            Key::KeyW => Some("W"),
+            Key::KeyE => Some("E"),
+            Key::KeyR => Some("R"),
+            Key::KeyA => Some("A"),
+            Key::KeyS => Some("S"),
+            Key::KeyD => Some("D"),
+            Key::KeyF => Some("F"),
+            Key::KeyZ => Some("Z"),
+            Key::KeyX => Some("X"),
+            Key::KeyC => Some("C"),
+            Key::KeyV => Some("V"),
+            Key::Space => Some("SPACE"),
+            _ => None,
+        };
+
+        if let Some(k) = key_str {
+            let k_string = k.to_string();
+            let audio = app_handle.state::<audio_engine::AudioEngine>();
+
+            let mut permitted = true;
+            if IS_COMMUNITY_BUILD && !["Q", "W", "E", "R"].contains(&k) {
+                permitted = false;
+            }
+
+            let mut is_playing = None;
+
+            if permitted {
+                if k == "SPACE" {
+                    audio.stop_all();
+                } else {
+                    let is_focused = is_focused_flag.load(Ordering::Relaxed);
+                    log_debug(&format!("[Rust Hook] Key: {}, Focused: {}", k, is_focused));
+
+                    if !is_focused {
+                        if let Ok(res) = audio.toggle_sound_direct(k_string) {
+                            is_playing = Some(res);
+                        }
+                    }
+                }
+            }
+
+            let _ = app_handle.emit("global-key-press", GlobalKeyPayload { 
+                key: k.to_string(), 
+                is_playing 
+            });
+        }
+    }
 }
 
 // ============================================================================
