@@ -166,7 +166,7 @@ fn main() {
 /// Muzzle system notification sounds briefly to prevent the "beep" on Windows/macOS
 /// without capturing the keyboard events globally.
 /// Muzzle system notification sounds persistently while sensing is active.
-fn muzzle_system_sounds(mute: bool, _app_handle: &tauri::AppHandle) {
+fn muzzle_system_sounds(mute: bool, app_handle: &tauri::AppHandle) {
     log_debug(&format!("[Muzzle] Entering muzzle (sync part) with mute={}", mute));
     
     #[cfg(target_os = "macos")]
@@ -269,13 +269,12 @@ fn muzzle_system_sounds(mute: bool, _app_handle: &tauri::AppHandle) {
 #[cfg(target_os = "macos")]
 mod macos_native {
     use core_foundation::runloop::{CFRunLoop, kCFRunLoopDefaultMode};
-    use core_graphics::event::{
-        CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement, CGEventType,
-        CGEventField,
+    use core_graphics::event::{CGEvent, CGEventType, CGEventField};
+    use core_graphics::event_tap::{
+        CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
     };
-    use core_foundation::base::TCFType;
     use std::sync::mpsc::Sender;
-    use crate::rdev::{Event, EventType, Key};
+    use rdev::{Event, EventType, Key};
 
     fn map_keycode(code: u64) -> Option<Key> {
         match code {
@@ -304,7 +303,7 @@ mod macos_native {
             CGEventTapPlacement::HeadInsert,
             CGEventTapOptions::Default,
             mask,
-            move |_, event_type, event| {
+            move |_, event_type: CGEventType, event: &CGEvent| {
                 let code = event.get_integer_value_field(CGEventField::KeyboardEventKeycode) as u64;
                 if let Some(key) = map_keycode(code) {
                     let ev_type = match event_type {
