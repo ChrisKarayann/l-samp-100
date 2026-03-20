@@ -287,7 +287,7 @@ mod macos_native {
     type CFRunLoopSourceRef = *mut c_void;
     type CFRunLoopRef = *mut c_void;
     type CFStringRef = *mut c_void;
-    type id = *mut c_void;
+    type ObjcId = *mut c_void;
 
     // Constants for event tap management
     const kCGEventTapDisabledByTimeout: u32 = 0x1FFFFFFF;
@@ -330,14 +330,14 @@ mod macos_native {
 
     #[link(name = "AppKit", kind = "framework")]
     extern "C" {
-        static NSDefaultRunLoopMode: id;
+        static NSDefaultRunLoopMode: ObjcId;
     }
 
     #[link(name = "Foundation", kind = "framework")]
     extern "C" {
-        fn objc_getClass(name: *const u8) -> id;
-        fn sel_registerName(name: *const u8) -> id;
-        fn objc_msgSend(obj: id, sel: id, ...) -> id;
+        fn objc_getClass(name: *const u8) -> ObjcId;
+        fn sel_registerName(name: *const u8) -> ObjcId;
+        fn objc_msgSend(obj: ObjcId, sel: ObjcId, ...) -> ObjcId;
     }
 
     /// Context passed to the raw callback
@@ -429,14 +429,15 @@ mod macos_native {
     /// Spawns a watchdog thread that re-enables the EventTap every 500ms.
     /// CGEventTapEnable is thread-safe per Apple docs so this is safe to call from a background thread.
     fn start_tap_watchdog(tap: CFMachPortRef) {
-        struct TapHandle(CFMachPortRef);
-        unsafe impl Send for TapHandle {}
-        let handle = TapHandle(tap);
+        // Cast to usize so the value is Send (raw pointers are not Send by default).
+        // SAFETY: The tap lives for the entire duration of the CFRunLoop on its
+        // dedicated thread, so the pointer remains valid for the watchdog's lifetime.
+        let tap_addr = tap as usize;
         std::thread::spawn(move || {
             loop {
                 std::thread::sleep(std::time::Duration::from_millis(500));
-                if !handle.0.is_null() {
-                    unsafe { CGEventTapEnable(handle.0, true) };
+                if tap_addr != 0 {
+                    unsafe { CGEventTapEnable(tap_addr as CFMachPortRef, true) };
                 }
             }
         });
