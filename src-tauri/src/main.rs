@@ -158,16 +158,7 @@ fn main() {
             if let tauri::WindowEvent::Focused(focused) = event {
                 let registry = window.state::<HotkeyRegistry>();
                 registry.is_focused.store(*focused, Ordering::SeqCst);
-                // Clear stuck keys when losing focus so they don't permanently
-                // block the auto-repeat guard for background keypresses.
-                if !focused {
-                    registry.pressed_keys.lock().unwrap().clear();
-                }
                 log_debug(&format!("[Focus] Main window focused: {}", focused));
-                // Emit to frontend: document.hasFocus() is unreliable in WKWebView
-                // on macOS (can return true even when the window is in the background).
-                // The frontend uses this event as the authoritative focus source instead.
-                let _ = window.emit("window-focus-changed", *focused);
             }
         })
         .run(tauri::generate_context!())
@@ -296,7 +287,7 @@ mod macos_native {
     type CFRunLoopSourceRef = *mut c_void;
     type CFRunLoopRef = *mut c_void;
     type CFStringRef = *mut c_void;
-    type ObjcId = *mut c_void;
+    type id = *mut c_void;
 
     // Constants for event tap management
     const kCGEventTapDisabledByTimeout: u32 = 0x1FFFFFFF;
@@ -335,19 +326,22 @@ mod macos_native {
     #[link(name = "ApplicationServices", kind = "framework")]
     extern "C" {
         fn AXIsProcessTrusted() -> bool;
+        /// AXIsProcessTrustedWithOptions: when passed {kAXTrustedCheckOptionPrompt: @YES},
+        /// shows the macOS system Accessibility dialog if not yet trusted.
+        /// Idempotent — shows nothing if already trusted.
+        fn AXIsProcessTrustedWithOptions(options: *mut c_void) -> bool;
     }
 
     #[link(name = "AppKit", kind = "framework")]
     extern "C" {
-        static NSDefaultRunLoopMode: ObjcId;
+        static NSDefaultRunLoopMode: id;
     }
 
     #[link(name = "Foundation", kind = "framework")]
     extern "C" {
-        fn objc_getClass(name: *const u8) -> ObjcId;
-        fn sel_registerName(name: *const u8) -> ObjcId;
-        fn objc_msgSend(obj: ObjcId, sel: ObjcId, ...) -> ObjcId;
-        fn objc_retain(obj: ObjcId) -> ObjcId;
+        fn objc_getClass(name: *const u8) -> id;
+        fn sel_registerName(name: *const u8) -> id;
+        fn objc_msgSend(obj: id, sel: id, ...) -> id;
     }
 
     /// Context passed to the raw callback
@@ -368,17 +362,12 @@ mod macos_native {
             let string_with_utf8_sel = sel_registerName("stringWithUTF8String:\0".as_ptr());
             let reason = objc_msgSend(reason_class, string_with_utf8_sel, "Hotkey Listener Persistence\0".as_ptr());
 
-            // NSActivityBackground (0xFF) | NSActivityLatencyCritical (0xFF00000000)
-            let options: u64 = 0x0000_00FF | 0x0000_00FF_0000_0000;
-
-            let token = objc_msgSend(process_info, begin_activity_sel, options, reason);
-            // CRITICAL: retain the activity token so it is never released.
-            // Without this, the autoreleased token is deallocated at the next
-            // autorelease pool drain and App Nap immediately re-activates.
-            if !token.is_null() {
-                objc_retain(token);
-            }
-            log_debug("[Listener] macOS App Nap DISABLED (Solid Mode - token retained)");
+            // NSActivityBackground | NSActivityLatencyCritical = 0xFF | 0xFF00000000
+            // Using a large bitmask to cover most background persistence flags
+            let options: u64 = 0x000000FF | 0x00000100 | 0x00000200 | 0x00000400; 
+            
+            let _ = objc_msgSend(process_info, begin_activity_sel, options, reason);
+            log_debug("[Listener] macOS App Nap DISABLED (Solid Mode)");
         }
     }
 
@@ -402,26 +391,44 @@ mod macos_native {
     }
 
     pub fn listen(tx: Sender<Event>) {
-        if unsafe { !AXIsProcessTrusted() } {
-            log_debug("[Listener] WARNING: Accessibility permissions NOT granted. Event Tap will likely fail.");
+        // AXIsProcessTrustedWithOptions(prompt=YES) is idempotent when already trusted —
+        // it shows nothing and returns true immediately. When NOT trusted (e.g. stale TCC
+        // entry after a rebuild), it presents the macOS system dialog so the user can
+        // re-grant without requiring a separate custom banner.
+        let trusted = unsafe {
+            if AXIsProcessTrusted() {
+                true
+            } else {
+                log_debug("[Listener] Not trusted — showing system Accessibility prompt...");
+                // Build {kAXTrustedCheckOptionPrompt: @YES} via ObjC
+                let ns   = objc_getClass("NSString\0".as_ptr());
+                let nn   = objc_getClass("NSNumber\0".as_ptr());
+                let nd   = objc_getClass("NSDictionary\0".as_ptr());
+                let key  = objc_msgSend(ns, sel_registerName("stringWithUTF8String:\0".as_ptr()),
+                                        "AXTrustedCheckOptionPrompt\0".as_ptr());
+                let yes  = objc_msgSend(nn, sel_registerName("numberWithInt:\0".as_ptr()), 1_i32);
+                let opts = objc_msgSend(nd, sel_registerName("dictionaryWithObject:forKey:\0".as_ptr()), yes, key);
+                let r = AXIsProcessTrustedWithOptions(opts as *mut c_void);
+                log_debug(&format!("[Listener] AXIsProcessTrustedWithOptions(prompt) \u{2192} {}", r));
+                r
+            }
+        };
+        if !trusted {
+            log_debug("[Listener] Accessibility not yet granted. Grant in System Settings and restart.");
         }
 
-        let mask = (1u64 << 10) | (1u64 << 11); // KeyDown (10) and KeyUp (11)
+        let mask = (1u64 << 10) | (1u64 << 11); // KeyDown=10, KeyUp=11
 
         unsafe {
             let context = Box::new(TapContext {
-                tx: tx.clone(),
+                tx: tx.clone(), // clone so tx is still available for rdev fallback below
                 tap: AtomicPtr::new(ptr::null_mut()),
             });
             let context_ptr = Box::into_raw(context);
 
-            // kCGEventTapOptionListenOnly=1: passive tap — never disabled by OS for
-            // callback latency, purely observational, most compatible with user
-            // Accessibility grants. We never need to modify events, only observe them.
-            //
-            // Try Session tap first (kCGSessionEventTap=1) — this is what rdev uses
-            // internally and is the most compatible with a user Accessibility grant.
-            // Fall back to HID tap (kCGHIDEventTap=0) which may need stronger perms.
+            // option=1 = kCGEventTapOptionListenOnly (passive): observe-only, never disabled
+            // by macOS for callback latency. Most compatible with a user Accessibility grant.
+            // Try Session tap first (kCGSessionEventTap=1), fall back to HID tap (0).
             let mut tap = CGEventTapCreate(1, 0, 1, mask, raw_callback, context_ptr as *mut c_void);
             if tap.is_null() {
                 log_debug("[Listener] Session passive tap failed. Trying HID passive tap...");
@@ -437,21 +444,17 @@ mod macos_native {
                 log_debug("[Listener] macOS Event Tap ACTIVE (passive/listen-only)");
                 start_tap_watchdog(tap);
                 log_debug("[Listener] macOS Native Loop is RUNNING");
-                // CRITICAL: CFRunLoopRun() is only called when a tap source is attached.
-                // Previously it was always called — with no source, the RunLoop returned
-                // immediately and the listener thread died, silently dropping all events.
-                CFRunLoopRun(); // blocks forever while tap is live
+                // CRITICAL: only call CFRunLoopRun() when a live source is attached.
+                // Without a source it returns immediately and the thread dies silently.
+                CFRunLoopRun();
+                return;
             } else {
-                // Both CGEventTap levels failed. Reclaim the context allocation and
-                // fall through to the rdev fallback below.
                 drop(Box::from_raw(context_ptr));
                 log_debug("[Listener] All CGEventTap attempts failed. Falling back to rdev...");
             }
         }
 
-        // Fallback path: rdev also uses CGEventTap internally (session-level, listen-only)
-        // but handles some edge cases differently. Also acts as recovery if CFRunLoopRun
-        // ever exits unexpectedly.
+        // rdev fallback: also uses CGEventTap internally but handles some edge cases differently.
         if let Err(e) = rdev::listen(move |event| {
             let _ = tx.send(event);
         }) {
@@ -459,12 +462,8 @@ mod macos_native {
         }
     }
 
-    /// Spawns a watchdog thread that re-enables the EventTap every 500ms.
-    /// CGEventTapEnable is thread-safe per Apple docs so this is safe to call from a background thread.
+    /// Watchdog: re-enables the EventTap every 500ms so macOS cannot permanently disable it.
     fn start_tap_watchdog(tap: CFMachPortRef) {
-        // Cast to usize so the value is Send (raw pointers are not Send by default).
-        // SAFETY: The tap lives for the entire duration of the CFRunLoop on its
-        // dedicated thread, so the pointer remains valid for the watchdog's lifetime.
         let tap_addr = tap as usize;
         std::thread::spawn(move || {
             loop {
@@ -498,7 +497,7 @@ mod macos_native {
             return event;
         }
 
-        // kCGKeyboardEventKeycode = 9 (NOT 62 which is kCGEventSourceUserData)
+        // Field 9 = kCGKeyboardEventKeycode. Field 62 = kCGEventSourceUserData (wrong).
         let code = unsafe { CGEventGetIntegerValueField(event, 9) } as u64;
         if let Some(key) = map_keycode(code) {
             let ev_type = match type_ {
