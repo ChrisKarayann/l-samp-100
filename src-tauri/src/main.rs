@@ -9,6 +9,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::collections::HashSet;
 use std::thread;
 use tauri::{AppHandle, Emitter, Manager, State};
 use std::io::Write;
@@ -51,6 +52,8 @@ pub struct HotkeyRegistry {
     pub previous_alert_volume: Mutex<Option<i32>>,
     /// Tracks if the main window is currently focused
     pub is_focused: Arc<AtomicBool>,
+    /// Tracks which keys are currently physically pressed to ignore auto-repeat
+    pub pressed_keys: Mutex<HashSet<rdev::Key>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -103,6 +106,7 @@ fn main() {
             registrations: Mutex::new(Vec::new()),
             previous_alert_volume: Mutex::new(None),
             is_focused: Arc::new(AtomicBool::new(true)),
+            pressed_keys: Mutex::new(HashSet::new()),
         })
         .manage(AudioEngine::new().expect("Failed to initialize audio engine"))
         .invoke_handler(tauri::generate_handler![
@@ -338,19 +342,28 @@ mod macos_native {
             let tx_boxed = Box::new(tx);
             let tx_ptr = Box::into_raw(tx_boxed) as *mut c_void;
             
-            // kCGSessionEventTap = 1, kCGHeadInsertEventTap = 0, kCGEventTapOptionDefault = 0
-            let tap = CGEventTapCreate(1, 0, 0, mask, raw_callback, tx_ptr);
+            // kCGHIDEventTap = 0 (Requires Accessibility), kCGHeadInsertEventTap = 0, kCGEventTapOptionDefault = 0
+            // Using Type 0 (HID) is often more robust for background listeners on newer macOS versions.
+            let tap = CGEventTapCreate(0, 0, 0, mask, raw_callback, tx_ptr);
             
             if tap.is_null() {
-                eprintln!("[Listener] Error: Failed to create macOS event tap. Accessibility permissions might be required.");
-                // Note: We don't return here so at least the thread stays alive for potential re-init or just to avoid crashing something else
-                return;
+                log_debug("[Listener] ERROR: Failed to create HID event tap. Falling back to Session tap...");
+                let tap_session = CGEventTapCreate(1, 0, 0, mask, raw_callback, tx_ptr);
+                if tap_session.is_null() {
+                    eprintln!("[Listener] FATAL: Failed to create any macOS event tap. Accessibility permissions REQUIRED.");
+                    return;
+                }
+                
+                let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap_session, 0);
+                let run_loop = CFRunLoopGetCurrent();
+                CFRunLoopAddSource(run_loop, source, kCFRunLoopDefaultMode);
+                CGEventTapEnable(tap_session, true);
+            } else {
+                let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap, 0);
+                let run_loop = CFRunLoopGetCurrent();
+                CFRunLoopAddSource(run_loop, source, kCFRunLoopDefaultMode);
+                CGEventTapEnable(tap, true);
             }
-
-            let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap, 0);
-            let run_loop = CFRunLoopGetCurrent();
-            CFRunLoopAddSource(run_loop, source, kCFRunLoopDefaultMode);
-            CGEventTapEnable(tap, true);
             
             log_debug("[Listener] macOS Native Loop is RUNNING");
             CFRunLoopRun();
@@ -435,11 +448,32 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
 fn handle_event(
     event: &rdev::Event, 
     app_handle: &tauri::AppHandle, 
-    _is_focused_flag: &Arc<AtomicBool>, 
+    is_focused_flag: &Arc<AtomicBool>, 
     enabled: &Arc<AtomicBool>
 ) {
+    let registry = app_handle.state::<HotkeyRegistry>();
     if !enabled.load(Ordering::Relaxed) {
         return;
+    }
+
+    // --- AUTO-REPEAT GUARD ---
+    match event.event_type {
+        EventType::KeyPress(key) => {
+            let mut pressed = registry.pressed_keys.lock().unwrap();
+            if pressed.contains(&key) {
+                // log_debug(&format!("[Hook] Ignoring auto-repeat for {:?}", key));
+                return; // Ignore auto-repeat KeyPress
+            }
+            pressed.insert(key);
+            log_debug(&format!("[Hook] KeyPress: {:?}", key));
+        }
+        EventType::KeyRelease(key) => {
+            let mut pressed = registry.pressed_keys.lock().unwrap();
+            pressed.remove(&key);
+            log_debug(&format!("[Hook] KeyRelease: {:?}", key));
+            return; // We only care about KeyPress for actual triggering
+        }
+        _ => return,
     }
 
     if let EventType::KeyPress(key) = event.event_type {
@@ -478,13 +512,19 @@ fn handle_event(
 
             if permitted {
                 if k == "SPACE" {
+                    log_debug("[Hook] Stop All (Space)");
                     audio.stop_all();
                 } else {
-                    // Logic: If global listener (Sense) is ON, we ALWAYS handle the toggle in the backend.
-                    // This provides consistent behavior across all platforms regardless of focus.
-                    // The frontend will receive the 'global-key-press' and update its UI.
-                    if let Ok(res) = audio.toggle_sound_direct(k_string) {
-                        is_playing = Some(res);
+                    let is_focused = is_focused_flag.load(Ordering::Relaxed);
+                    log_debug(&format!("[Hook] Key: {}, Focused: {}", k, is_focused));
+                    
+                    if !is_focused {
+                        if let Ok(res) = audio.toggle_sound_direct(k_string) {
+                            is_playing = Some(res);
+                            log_debug(&format!("[Hook] Toggled sound: {} (New State: {})", k, res));
+                        } else {
+                            log_debug(&format!("[Hook] Failed to toggle sound: {}", k));
+                        }
                     }
                 }
 
