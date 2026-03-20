@@ -271,6 +271,7 @@ mod macos_native {
     use std::ffi::c_void;
     use std::sync::mpsc::Sender;
     use rdev::{Event, EventType, Key};
+    use crate::log_debug;
 
     type CGEventTapProxy = *mut c_void;
     type CGEventRef = *mut c_void;
@@ -434,7 +435,7 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
 fn handle_event(
     event: &rdev::Event, 
     app_handle: &tauri::AppHandle, 
-    is_focused_flag: &Arc<AtomicBool>, 
+    _is_focused_flag: &Arc<AtomicBool>, 
     enabled: &Arc<AtomicBool>
 ) {
     if !enabled.load(Ordering::Relaxed) {
