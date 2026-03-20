@@ -94,17 +94,14 @@ export class TauriBridgeService implements OnDestroy {
       const globalKeyPressUnlisten = await this.listen('global-key-press', (event: any) => {
         const { key, is_playing } = event.payload;
         
-        // --- HYBRID LOGIC ---
-        // If the window is BLURRED, we use rdev for both audio AND UI.
-        // If the window is FOCUSED, we ignore rdev because the native keydown 
-        // listener (below) already handled both.
-        if (!document.hasFocus()) {
-          if (key === 'SPACE') {
-            this.onGlobalStop.next();
-          } else {
-            // is_playing is Some(bool) from backend rdev loop
-            this.onKeyTriggered.next({ key, isPlaying: is_playing as boolean });
-          }
+        // --- UNIFIED LOGIC ---
+        // We always process global-key-press from the backend if it's enabled.
+        // This ensures consistent behavior (Windows/Linux/macOS) whether focused or not.
+        if (key === 'SPACE') {
+          this.onGlobalStop.next();
+        } else {
+          // is_playing is Some(bool) from backend rdev loop
+          this.onKeyTriggered.next({ key, isPlaying: is_playing as boolean });
         }
       });
 
@@ -149,12 +146,17 @@ export class TauriBridgeService implements OnDestroy {
         const normalizedKey = key.toUpperCase();
         event.preventDefault();
         
-        // Trigger audio directly via IPC and get the ACTUAL NEW STATE
-        try {
-          const isPlaying = await this.invoke('audio_toggle_direct', { key: normalizedKey }) as boolean;
-          this.onKeyTriggered.next({ key: normalizedKey, isPlaying });
-        } catch (e) {
-          // Pad might be empty - we still want the "push" visual effect
+        // If Global Sense is ON, we let the backend handle the trigger to avoid double-play.
+        // We only trigger directly via IPC if the global listener is OFF (Silent Mode).
+        if (!this.listenerActive) {
+          try {
+            const isPlaying = await this.invoke('audio_toggle_direct', { key: normalizedKey }) as boolean;
+            this.onKeyTriggered.next({ key: normalizedKey, isPlaying });
+          } catch (e) {
+            this.onKeyTriggered.next({ key: normalizedKey });
+          }
+        } else {
+          // Visual feedback only - backend will handle the audio and send global-key-press
           this.onKeyTriggered.next({ key: normalizedKey });
         }
       }

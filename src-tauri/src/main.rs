@@ -329,8 +329,9 @@ mod macos_native {
     }
 
     pub fn listen(tx: Sender<Event>) {
-        // Mask for KeyDown (10) and KeyUp (11)
-        let mask = (1u64 << 10) | (1u64 << 11);
+        // Mask for KeyDown (10), KeyUp (11), and FlagsChanged (12)
+        // Listen to all events to be safe, filtering in callback
+        let mask = !0u64; 
         
         unsafe {
             let tx_boxed = Box::new(tx);
@@ -340,7 +341,8 @@ mod macos_native {
             let tap = CGEventTapCreate(1, 0, 0, mask, raw_callback, tx_ptr);
             
             if tap.is_null() {
-                eprintln!("[Listener] Error: Failed to create macOS event tap");
+                eprintln!("[Listener] Error: Failed to create macOS event tap. Accessibility permissions might be required.");
+                // Note: We don't return here so at least the thread stays alive for potential re-init or just to avoid crashing something else
                 return;
             }
 
@@ -348,6 +350,8 @@ mod macos_native {
             let run_loop = CFRunLoopGetCurrent();
             CFRunLoopAddSource(run_loop, source, kCFRunLoopDefaultMode);
             CGEventTapEnable(tap, true);
+            
+            log_debug("[Listener] macOS Native Loop is RUNNING");
             CFRunLoopRun();
         }
     }
@@ -358,6 +362,13 @@ mod macos_native {
         event: CGEventRef,
         user_info: *mut c_void,
     ) -> CGEventRef {
+        // Log every event type to debug
+        // log_debug(&format!("[macOS Callback] Event Type: {}", type_));
+
+        if type_ != 10 && type_ != 11 {
+            return event;
+        }
+
         let tx = unsafe { &*(user_info as *mut Sender<Event>) };
         // kCGKeyboardEventKeycode = 62
         let code = unsafe { CGEventGetIntegerValueField(event, 62) } as u64;
@@ -468,21 +479,20 @@ fn handle_event(
                 if k == "SPACE" {
                     audio.stop_all();
                 } else {
-                    let is_focused = is_focused_flag.load(Ordering::Relaxed);
-                    log_debug(&format!("[Rust Hook] Key: {}, Focused: {}", k, is_focused));
-
-                    if !is_focused {
-                        if let Ok(res) = audio.toggle_sound_direct(k_string) {
-                            is_playing = Some(res);
-                        }
+                    // Logic: If global listener (Sense) is ON, we ALWAYS handle the toggle in the backend.
+                    // This provides consistent behavior across all platforms regardless of focus.
+                    // The frontend will receive the 'global-key-press' and update its UI.
+                    if let Ok(res) = audio.toggle_sound_direct(k_string) {
+                        is_playing = Some(res);
                     }
                 }
-            }
 
-            let _ = app_handle.emit("global-key-press", GlobalKeyPayload { 
-                key: k.to_string(), 
-                is_playing 
-            });
+                // Push to frontend for UI updates
+                let _ = app_handle.emit("global-key-press", GlobalKeyPayload { 
+                    key: k.to_string(), 
+                    is_playing 
+                });
+            }
         }
     }
 }
