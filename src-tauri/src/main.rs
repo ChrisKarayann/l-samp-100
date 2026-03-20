@@ -132,6 +132,7 @@ fn main() {
             audio_stop_all,
         ])
         .setup(|app| {
+            let app_handle = app.handle().clone();
             start_background_listener(app_handle.clone());
             
             // Ensure muzzling is active on startup since enabled defaults to true
