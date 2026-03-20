@@ -358,9 +358,8 @@ mod macos_native {
             let string_with_utf8_sel = sel_registerName("stringWithUTF8String:\0".as_ptr());
             let reason = objc_msgSend(reason_class, string_with_utf8_sel, "Hotkey Listener Persistence\0".as_ptr());
 
-            // NSActivityBackground | NSActivityLatencyCritical = 0xFF | 0xFF00000000
-            // Using a large bitmask to cover most background persistence flags
-            let options: u64 = 0x000000FF | 0x00000100 | 0x00000200 | 0x00000400; 
+            // NSActivityBackground (0xFF) | NSActivityLatencyCritical (0xFF00000000)
+            let options: u64 = 0x0000_00FF | 0x0000_00FF_0000_0000;
             
             let _ = objc_msgSend(process_info, begin_activity_sel, options, reason);
             log_debug("[Listener] macOS App Nap DISABLED (Solid Mode)");
@@ -415,33 +414,33 @@ mod macos_native {
                 CFRunLoopAddSource(run_loop, source, kCFRunLoopCommonModes);
                 CGEventTapEnable(tap, true);
                 log_debug("[Listener] macOS Event Tap ACTIVE");
-            }
 
-            // 2. Setup NSEvent Global Monitor (User Level - No Accessibility Required)
-            setup_nsevent_monitor(tx);
+                // 2. Watchdog: re-enable tap every 500ms in case the OS silently disables it
+                start_tap_watchdog(tap);
+            } else {
+                log_debug("[Listener] ERROR: Both HID and Session taps failed. No key events will be received.");
+            }
 
             log_debug("[Listener] macOS Native Loop is RUNNING (Solid Mode)");
             CFRunLoopRun();
         }
     }
 
-    fn setup_nsevent_monitor(tx: Sender<Event>) {
-        unsafe {
-            let nsevent_class = objc_getClass("NSEvent\0".as_ptr());
-            let monitor_sel = sel_registerName("addGlobalMonitorForEventsMatchingMask:handler:\0".as_ptr());
-            
-            // NSEventMaskKeyDown = 1 << 10
-            let mask: u64 = 1 << 10;
-            
-            // We use a simplified Rust-to-ObjC bridge approach here.
-            // Since writing a full ObjC block in Rust is complex without 'block' crate,
-            // we rely on the Event Tap for primary key logging and high-resolution backgrounding.
-            // But for NSEvent monitor, we would ideally need a block.
-            
-            // [NOTE] For simplicity and to avoid 'block' crate dependency/complexity,
-            // we will focus on the HID Event Tap + App Nap Disable which is the most "Solid" path.
-            log_debug("[Listener] NSEvent Global Guard Ready (Primary via EventTap)");
-        }
+    /// Spawns a watchdog thread that re-enables the EventTap every 500ms.
+    /// CGEventTapEnable is thread-safe per Apple docs so this is safe to call from a background thread.
+    fn start_tap_watchdog(tap: CFMachPortRef) {
+        struct TapHandle(CFMachPortRef);
+        unsafe impl Send for TapHandle {}
+        let handle = TapHandle(tap);
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                if !handle.0.is_null() {
+                    unsafe { CGEventTapEnable(handle.0, true) };
+                }
+            }
+        });
+        log_debug("[Listener] EventTap watchdog ACTIVE (500ms heartbeat)");
     }
 
     extern "C" fn raw_callback(
