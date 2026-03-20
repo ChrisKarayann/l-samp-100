@@ -276,6 +276,8 @@ mod macos_native {
     use std::sync::mpsc::Sender;
     use rdev::{Event, EventType, Key};
     use crate::log_debug;
+    use std::sync::atomic::{AtomicPtr, Ordering};
+    use std::ptr;
 
     type CGEventTapProxy = *mut c_void;
     type CGEventRef = *mut c_void;
@@ -283,6 +285,10 @@ mod macos_native {
     type CFRunLoopSourceRef = *mut c_void;
     type CFRunLoopRef = *mut c_void;
     type CFStringRef = *mut c_void;
+
+    // Constants for event tap management
+    const kCGEventTapDisabledByTimeout: u32 = 0x1FFFFFFF;
+    const kCGEventTapDisabledByUserInput: u32 = 0x1FFFFFFE;
 
     type CGEventTapCallBack = extern "C" fn(
         proxy: CGEventTapProxy,
@@ -314,6 +320,19 @@ mod macos_native {
         static kCFRunLoopDefaultMode: CFStringRef;
     }
 
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        /// Check if the current process has Accessibility (Event Tap) permissions
+        fn AXIsProcessTrusted() -> bool;
+    }
+
+    /// Context passed to the raw callback
+    struct TapContext {
+        tx: Sender<Event>,
+        /// Store a copy of the tap handle so the callback can re-enable it on timeout
+        tap: AtomicPtr<c_void>,
+    }
+
     fn map_keycode(code: u64) -> Option<Key> {
         match code {
             0 => Some(Key::KeyA),
@@ -334,38 +353,48 @@ mod macos_native {
     }
 
     pub fn listen(tx: Sender<Event>) {
-        // Mask for KeyDown (10), KeyUp (11), and FlagsChanged (12)
-        // Listen to all events to be safe, filtering in callback
-        let mask = !0u64; 
+        if unsafe { !AXIsProcessTrusted() } {
+            log_debug("[Listener] CRITICAL: macOS Accessibility permissions NOT granted. Global hotkeys will FAIL.");
+        }
+
+        // Mask for KeyDown (10) and KeyUp (11)
+        let mask = (1u64 << 10) | (1u64 << 11);
         
         unsafe {
-            let tx_boxed = Box::new(tx);
-            let tx_ptr = Box::into_raw(tx_boxed) as *mut c_void;
+            // Create a shared context for the callback
+            let context = Box::new(TapContext {
+                tx,
+                tap: AtomicPtr::new(ptr::null_mut()),
+            });
+            let context_ptr = Box::into_raw(context);
             
-            // kCGHIDEventTap = 0 (Requires Accessibility), kCGHeadInsertEventTap = 0, kCGEventTapOptionDefault = 0
-            // Using Type 0 (HID) is often more robust for background listeners on newer macOS versions.
-            let tap = CGEventTapCreate(0, 0, 0, mask, raw_callback, tx_ptr);
+            // kCGHIDEventTap = 0 (Global, requires Accessibility)
+            // kCGHeadInsertEventTap = 0
+            // kCGEventTapOptionDefault = 0
+            let mut tap = CGEventTapCreate(0, 0, 0, mask, raw_callback, context_ptr as *mut c_void);
             
             if tap.is_null() {
-                log_debug("[Listener] ERROR: Failed to create HID event tap. Falling back to Session tap...");
-                let tap_session = CGEventTapCreate(1, 0, 0, mask, raw_callback, tx_ptr);
-                if tap_session.is_null() {
-                    eprintln!("[Listener] FATAL: Failed to create any macOS event tap. Accessibility permissions REQUIRED.");
-                    return;
-                }
-                
-                let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap_session, 0);
-                let run_loop = CFRunLoopGetCurrent();
-                CFRunLoopAddSource(run_loop, source, kCFRunLoopDefaultMode);
-                CGEventTapEnable(tap_session, true);
-            } else {
-                let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap, 0);
-                let run_loop = CFRunLoopGetCurrent();
-                CFRunLoopAddSource(run_loop, source, kCFRunLoopDefaultMode);
-                CGEventTapEnable(tap, true);
+                log_debug("[Listener] HID tap creation failed. Falling back to Session tap...");
+                // kCGSessionEventTap = 1 (Session-specific, less robust in background)
+                tap = CGEventTapCreate(1, 0, 0, mask, raw_callback, context_ptr as *mut c_void);
             }
+
+            if tap.is_null() {
+                log_debug("[Listener] FATAL: Failed to create ANY macOS event tap. Check Accessibility permissions.");
+                // Clean up context if we failed to even create a tap
+                let _ = Box::from_raw(context_ptr);
+                return;
+            }
+
+            // Successfully created a tap, store it in the context for self-repair
+            (*context_ptr).tap.store(tap, Ordering::SeqCst);
             
-            log_debug("[Listener] macOS Native Loop is RUNNING");
+            let source = CFMachPortCreateRunLoopSource(ptr::null_mut(), tap, 0);
+            let run_loop = CFRunLoopGetCurrent();
+            CFRunLoopAddSource(run_loop, source, kCFRunLoopDefaultMode);
+            CGEventTapEnable(tap, true);
+            
+            log_debug("[Listener] macOS Native Loop is ACTIVE (HID/Session mode)");
             CFRunLoopRun();
         }
     }
@@ -376,14 +405,23 @@ mod macos_native {
         event: CGEventRef,
         user_info: *mut c_void,
     ) -> CGEventRef {
-        // Log every event type to debug
-        // log_debug(&format!("[macOS Callback] Event Type: {}", type_));
+        let context = unsafe { &*(user_info as *const TapContext) };
 
+        // Handle the case where macOS disables the tap (e.g. timeout due to system load)
+        if type_ == kCGEventTapDisabledByTimeout || type_ == kCGEventTapDisabledByUserInput {
+            let tap = context.tap.load(Ordering::SeqCst);
+            if !tap.is_null() {
+                log_debug("[Listener] Event tap disabled by macOS. Attempting RE-ENABLE...");
+                unsafe { CGEventTapEnable(tap, true) };
+            }
+            return event;
+        }
+
+        // We only care about KeyDown (10) and KeyUp (11)
         if type_ != 10 && type_ != 11 {
             return event;
         }
 
-        let tx = unsafe { &*(user_info as *mut Sender<Event>) };
         // kCGKeyboardEventKeycode = 62
         let code = unsafe { CGEventGetIntegerValueField(event, 62) } as u64;
         
@@ -398,7 +436,8 @@ mod macos_native {
                 time: std::time::SystemTime::now(),
                 name: None,
             };
-            let _ = tx.send(e);
+            // Send to processor thread; ignore errors (e.g. if the receiver dropped)
+            let _ = context.tx.send(e);
         }
         event
     }
