@@ -268,13 +268,46 @@ fn muzzle_system_sounds(mute: bool, app_handle: &tauri::AppHandle) {
 
 #[cfg(target_os = "macos")]
 mod macos_native {
-    use core_foundation::runloop::{CFRunLoop, kCFRunLoopDefaultMode};
-    use core_graphics::event::{CGEvent, CGEventType, CGEventField};
-    use core_graphics::event_tap::{
-        CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
-    };
+    use std::ffi::c_void;
     use std::sync::mpsc::Sender;
     use rdev::{Event, EventType, Key};
+
+    type CGEventTapProxy = *mut c_void;
+    type CGEventRef = *mut c_void;
+    type CFMachPortRef = *mut c_void;
+    type CFRunLoopSourceRef = *mut c_void;
+    type CFRunLoopRef = *mut c_void;
+    type CFStringRef = *mut c_void;
+
+    type CGEventTapCallBack = extern "C" fn(
+        proxy: CGEventTapProxy,
+        type_: u32,
+        event: CGEventRef,
+        user_info: *mut c_void,
+    ) -> CGEventRef;
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGEventTapCreate(
+            tap: u32,
+            place: u32,
+            options: u32,
+            events_interesting: u64,
+            callback: CGEventTapCallBack,
+            user_info: *mut c_void,
+        ) -> CFMachPortRef;
+        fn CGEventGetIntegerValueField(event: CGEventRef, field: u32) -> i64;
+        fn CGEventTapEnable(tap: CFMachPortRef, enable: bool);
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFMachPortCreateRunLoopSource(allocator: *mut c_void, tap: CFMachPortRef, order: isize) -> CFRunLoopSourceRef;
+        fn CFRunLoopGetCurrent() -> CFRunLoopRef;
+        fn CFRunLoopAddSource(rl: CFRunLoopRef, source: CFRunLoopSourceRef, mode: CFStringRef);
+        fn CFRunLoopRun();
+        static kCFRunLoopDefaultMode: CFStringRef;
+    }
 
     fn map_keycode(code: u64) -> Option<Key> {
         match code {
@@ -296,45 +329,53 @@ mod macos_native {
     }
 
     pub fn listen(tx: Sender<Event>) {
-        let mask = (1 << CGEventType::KeyDown as u64) | (1 << CGEventType::KeyUp as u64);
+        // Mask for KeyDown (10) and KeyUp (11)
+        let mask = (1u64 << 10) | (1u64 << 11);
         
-        let tap = match CGEventTap::new(
-            CGEventTapLocation::Session,
-            CGEventTapPlacement::HeadInsert,
-            CGEventTapOptions::Default,
-            mask,
-            move |_, event_type: CGEventType, event: &CGEvent| {
-                let code = event.get_integer_value_field(CGEventField::KeyboardEventKeycode) as u64;
-                if let Some(key) = map_keycode(code) {
-                    let ev_type = match event_type {
-                        CGEventType::KeyDown => EventType::KeyPress(key),
-                        CGEventType::KeyUp => EventType::KeyRelease(key),
-                        _ => return None,
-                    };
-                    let e = Event {
-                        event_type: ev_type,
-                        time: std::time::SystemTime::now(),
-                        name: None, // CRITICAL: Skip name resolution to avoid the crash!
-                    };
-                    let _ = tx.send(e);
-                }
-                None // Pass event through (do not consume)
-            },
-        ) {
-            Ok(t) => t,
-            Err(_) => {
-                eprintln!("[Listener] Error: Failed to create macOS event tap (Check accessibility permissions)");
+        unsafe {
+            let tx_boxed = Box::new(tx);
+            let tx_ptr = Box::into_raw(tx_boxed) as *mut c_void;
+            
+            // kCGSessionEventTap = 1, kCGHeadInsertEventTap = 0, kCGEventTapOptionDefault = 0
+            let tap = CGEventTapCreate(1, 0, 0, mask, raw_callback, tx_ptr);
+            
+            if tap.is_null() {
+                eprintln!("[Listener] Error: Failed to create macOS event tap");
                 return;
             }
-        };
 
-        unsafe {
-            let loop_source = tap.create_run_loop_source(0).expect("Failed to create loop source");
-            let run_loop = CFRunLoop::get_current();
-            run_loop.add_source(&loop_source, kCFRunLoopDefaultMode);
-            tap.enable();
-            CFRunLoop::run_current();
+            let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap, 0);
+            let run_loop = CFRunLoopGetCurrent();
+            CFRunLoopAddSource(run_loop, source, kCFRunLoopDefaultMode);
+            CGEventTapEnable(tap, true);
+            CFRunLoopRun();
         }
+    }
+
+    extern "C" fn raw_callback(
+        _proxy: CGEventTapProxy,
+        type_: u32,
+        event: CGEventRef,
+        user_info: *mut c_void,
+    ) -> CGEventRef {
+        let tx = unsafe { &*(user_info as *mut Sender<Event>) };
+        // kCGKeyboardEventKeycode = 62
+        let code = unsafe { CGEventGetIntegerValueField(event, 62) } as u64;
+        
+        if let Some(key) = map_keycode(code) {
+            let ev_type = match type_ {
+                10 => EventType::KeyPress(key),
+                11 => EventType::KeyRelease(key),
+                _ => return event,
+            };
+            let e = Event {
+                event_type: ev_type,
+                time: std::time::SystemTime::now(),
+                name: None,
+            };
+            let _ = tx.send(e);
+        }
+        event
     }
 }
 
