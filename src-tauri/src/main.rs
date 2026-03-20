@@ -12,7 +12,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::{AppHandle, Emitter, Manager, State};
 use std::io::Write;
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::channel;
+#[cfg(target_os = "windows")]
+use std::sync::mpsc::Sender;
 
 #[cfg(target_os = "windows")]
 use windows::Win32::Media::Audio::{
@@ -164,7 +166,7 @@ fn main() {
 /// Muzzle system notification sounds briefly to prevent the "beep" on Windows/macOS
 /// without capturing the keyboard events globally.
 /// Muzzle system notification sounds persistently while sensing is active.
-fn muzzle_system_sounds(mute: bool, app_handle: &tauri::AppHandle) {
+fn muzzle_system_sounds(mute: bool, _app_handle: &tauri::AppHandle) {
     log_debug(&format!("[Muzzle] Entering muzzle (sync part) with mute={}", mute));
     
     #[cfg(target_os = "macos")]
@@ -260,6 +262,83 @@ fn muzzle_system_sounds(mute: bool, app_handle: &tauri::AppHandle) {
 // GLOBAL BACKGROUND LISTENER (using rdev)
 // ============================================================================
 
+// ----------------------------------------------------------------------------
+// macOS Native Listener (Bypasses rdev's non-thread-safe name resolution)
+// ----------------------------------------------------------------------------
+
+#[cfg(target_os = "macos")]
+mod macos_native {
+    use core_foundation::runloop::{CFRunLoop, kCFRunLoopDefaultMode};
+    use core_graphics::event::{
+        CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement, CGEventType,
+        CGEventField,
+    };
+    use core_foundation::base::TCFType;
+    use std::sync::mpsc::Sender;
+    use crate::rdev::{Event, EventType, Key};
+
+    fn map_keycode(code: u64) -> Option<Key> {
+        match code {
+            0 => Some(Key::KeyA),
+            1 => Some(Key::KeyS),
+            2 => Some(Key::KeyD),
+            3 => Some(Key::KeyF),
+            6 => Some(Key::KeyZ),
+            7 => Some(Key::KeyX),
+            8 => Some(Key::KeyC),
+            9 => Some(Key::KeyV),
+            12 => Some(Key::KeyQ),
+            13 => Some(Key::KeyW),
+            14 => Some(Key::KeyE),
+            15 => Some(Key::KeyR),
+            49 => Some(Key::Space),
+            _ => None,
+        }
+    }
+
+    pub fn listen(tx: Sender<Event>) {
+        let mask = (1 << CGEventType::KeyDown as u64) | (1 << CGEventType::KeyUp as u64);
+        
+        let tap = match CGEventTap::new(
+            CGEventTapLocation::Session,
+            CGEventTapPlacement::HeadInsert,
+            CGEventTapOptions::Default,
+            mask,
+            move |_, event_type, event| {
+                let code = event.get_integer_value_field(CGEventField::KeyboardEventKeycode) as u64;
+                if let Some(key) = map_keycode(code) {
+                    let ev_type = match event_type {
+                        CGEventType::KeyDown => EventType::KeyPress(key),
+                        CGEventType::KeyUp => EventType::KeyRelease(key),
+                        _ => return None,
+                    };
+                    let e = Event {
+                        event_type: ev_type,
+                        time: std::time::SystemTime::now(),
+                        name: None, // CRITICAL: Skip name resolution to avoid the crash!
+                    };
+                    let _ = tx.send(e);
+                }
+                None // Pass event through (do not consume)
+            },
+        ) {
+            Ok(t) => t,
+            Err(_) => {
+                eprintln!("[Listener] Error: Failed to create macOS event tap (Check accessibility permissions)");
+                return;
+            }
+        };
+
+        unsafe {
+            let loop_source = tap.create_run_loop_source(0).expect("Failed to create loop source");
+            let run_loop = CFRunLoop::get_current();
+            run_loop.add_source(&loop_source, kCFRunLoopDefaultMode);
+            tap.enable();
+            CFRunLoop::run_current();
+        }
+    }
+}
+
 fn start_background_listener(app_handle: tauri::AppHandle) {
     let is_focused_flag = Arc::clone(&app_handle.state::<HotkeyRegistry>().is_focused);
     let enabled = Arc::clone(&app_handle.state::<HotkeyRegistry>().enabled);
@@ -280,6 +359,13 @@ fn start_background_listener(app_handle: tauri::AppHandle) {
     });
 
     // Thread 2: The Listener (purely for tapping keys)
+    #[cfg(target_os = "macos")]
+    thread::spawn(move || {
+        log_debug("[Listener] Initializing NATIVE macOS loop (No-TIS mode)");
+        macos_native::listen(tx);
+    });
+
+    #[cfg(not(target_os = "macos"))]
     thread::spawn(move || {
         log_debug("[Listener] Initializing rdev loop...");
         
