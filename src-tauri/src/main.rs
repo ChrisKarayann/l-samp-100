@@ -407,38 +407,55 @@ mod macos_native {
         }
 
         let mask = (1u64 << 10) | (1u64 << 11); // KeyDown (10) and KeyUp (11)
-        
+
         unsafe {
             let context = Box::new(TapContext {
                 tx: tx.clone(),
                 tap: AtomicPtr::new(ptr::null_mut()),
             });
             let context_ptr = Box::into_raw(context);
-            
-            // 1. Setup Event Tap (HID Level 0)
-            let mut tap = CGEventTapCreate(0, 0, 0, mask, raw_callback, context_ptr as *mut c_void);
+
+            // kCGEventTapOptionListenOnly=1: passive tap — never disabled by OS for
+            // callback latency, purely observational, most compatible with user
+            // Accessibility grants. We never need to modify events, only observe them.
+            //
+            // Try Session tap first (kCGSessionEventTap=1) — this is what rdev uses
+            // internally and is the most compatible with a user Accessibility grant.
+            // Fall back to HID tap (kCGHIDEventTap=0) which may need stronger perms.
+            let mut tap = CGEventTapCreate(1, 0, 1, mask, raw_callback, context_ptr as *mut c_void);
             if tap.is_null() {
-                log_debug("[Listener] HID tap failed. Trying Session tap...");
-                tap = CGEventTapCreate(1, 0, 0, mask, raw_callback, context_ptr as *mut c_void);
+                log_debug("[Listener] Session passive tap failed. Trying HID passive tap...");
+                tap = CGEventTapCreate(0, 0, 1, mask, raw_callback, context_ptr as *mut c_void);
             }
 
             if !tap.is_null() {
                 (*context_ptr).tap.store(tap, Ordering::SeqCst);
                 let source = CFMachPortCreateRunLoopSource(ptr::null_mut(), tap, 0);
                 let run_loop = CFRunLoopGetCurrent();
-                // Add to Common Modes to ensure it runs during menu open/modal states
                 CFRunLoopAddSource(run_loop, source, kCFRunLoopCommonModes);
                 CGEventTapEnable(tap, true);
-                log_debug("[Listener] macOS Event Tap ACTIVE");
-
-                // 2. Watchdog: re-enable tap every 500ms in case the OS silently disables it
+                log_debug("[Listener] macOS Event Tap ACTIVE (passive/listen-only)");
                 start_tap_watchdog(tap);
+                log_debug("[Listener] macOS Native Loop is RUNNING");
+                // CRITICAL: CFRunLoopRun() is only called when a tap source is attached.
+                // Previously it was always called — with no source, the RunLoop returned
+                // immediately and the listener thread died, silently dropping all events.
+                CFRunLoopRun(); // blocks forever while tap is live
             } else {
-                log_debug("[Listener] ERROR: Both HID and Session taps failed. No key events will be received.");
+                // Both CGEventTap levels failed. Reclaim the context allocation and
+                // fall through to the rdev fallback below.
+                drop(Box::from_raw(context_ptr));
+                log_debug("[Listener] All CGEventTap attempts failed. Falling back to rdev...");
             }
+        }
 
-            log_debug("[Listener] macOS Native Loop is RUNNING (Solid Mode)");
-            CFRunLoopRun();
+        // Fallback path: rdev also uses CGEventTap internally (session-level, listen-only)
+        // but handles some edge cases differently. Also acts as recovery if CFRunLoopRun
+        // ever exits unexpectedly.
+        if let Err(e) = rdev::listen(move |event| {
+            let _ = tx.send(event);
+        }) {
+            log_debug(&format!("[Listener] rdev fallback also failed: {:?}", e));
         }
     }
 
