@@ -158,14 +158,16 @@ fn main() {
             if let tauri::WindowEvent::Focused(focused) = event {
                 let registry = window.state::<HotkeyRegistry>();
                 registry.is_focused.store(*focused, Ordering::SeqCst);
-                // Clear stuck keys when losing focus: any key held at the moment of
-                // alt-tab/minimize would otherwise be permanently stuck in the set,
-                // causing the next background press of that key to be silently ignored
-                // as "auto-repeat".
+                // Clear stuck keys when losing focus so they don't permanently
+                // block the auto-repeat guard for background keypresses.
                 if !focused {
                     registry.pressed_keys.lock().unwrap().clear();
                 }
                 log_debug(&format!("[Focus] Main window focused: {}", focused));
+                // Emit to frontend: document.hasFocus() is unreliable in WKWebView
+                // on macOS (can return true even when the window is in the background).
+                // The frontend uses this event as the authoritative focus source instead.
+                let _ = window.emit("window-focus-changed", *focused);
             }
         })
         .run(tauri::generate_context!())
@@ -345,6 +347,7 @@ mod macos_native {
         fn objc_getClass(name: *const u8) -> ObjcId;
         fn sel_registerName(name: *const u8) -> ObjcId;
         fn objc_msgSend(obj: ObjcId, sel: ObjcId, ...) -> ObjcId;
+        fn objc_retain(obj: ObjcId) -> ObjcId;
     }
 
     /// Context passed to the raw callback
@@ -367,9 +370,15 @@ mod macos_native {
 
             // NSActivityBackground (0xFF) | NSActivityLatencyCritical (0xFF00000000)
             let options: u64 = 0x0000_00FF | 0x0000_00FF_0000_0000;
-            
-            let _ = objc_msgSend(process_info, begin_activity_sel, options, reason);
-            log_debug("[Listener] macOS App Nap DISABLED (Solid Mode)");
+
+            let token = objc_msgSend(process_info, begin_activity_sel, options, reason);
+            // CRITICAL: retain the activity token so it is never released.
+            // Without this, the autoreleased token is deallocated at the next
+            // autorelease pool drain and App Nap immediately re-activates.
+            if !token.is_null() {
+                objc_retain(token);
+            }
+            log_debug("[Listener] macOS App Nap DISABLED (Solid Mode - token retained)");
         }
     }
 

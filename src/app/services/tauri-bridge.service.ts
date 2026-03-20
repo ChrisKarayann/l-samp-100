@@ -48,6 +48,10 @@ export class TauriBridgeService implements OnDestroy {
   private invoke: any;
   private listen: any;
   private listenerActive = true;
+  // Tracks window focus state from Rust events.
+  // document.hasFocus() is unreliable in WKWebView on macOS — it can return
+  // true even when another app is frontmost. Rust's on_window_event is authoritative.
+  private windowIsFocused = true;
 
   constructor(private ngZone: NgZone) {
     this.initializeEventListeners();
@@ -98,7 +102,9 @@ export class TauriBridgeService implements OnDestroy {
         // If the window is BLURRED, we use the backend for both audio AND UI.
         // If the window is FOCUSED, we ignore the backend hook because the native
         // window 'keydown' listener handles it with lower latency and better input context.
-        if (!document.hasFocus()) {
+        // NOTE: using windowIsFocused (Rust-sourced) instead of document.hasFocus()
+        // because WKWebView on macOS reports hasFocus()=true even when unfocused.
+        if (!this.windowIsFocused) {
           if (key === 'SPACE') {
             this.onGlobalStop.next();
           } else {
@@ -106,6 +112,11 @@ export class TauriBridgeService implements OnDestroy {
             this.onKeyTriggered.next({ key, isPlaying: is_playing as boolean });
           }
         }
+      });
+
+      // Track window focus state from Rust (authoritative on macOS)
+      const focusUnlisten = await this.listen('window-focus-changed', (event: any) => {
+        this.windowIsFocused = event.payload as boolean;
       });
 
       // Listen for global stop
@@ -123,7 +134,8 @@ export class TauriBridgeService implements OnDestroy {
         keyTriggerUnlisten,
         globalKeyPressUnlisten,
         globalStopUnlisten,
-        configUnlisten
+        configUnlisten,
+        focusUnlisten
       ];
     } catch (error) {
       console.error('[TauriBridge] Failed to initialize listeners:', error);
