@@ -158,6 +158,13 @@ fn main() {
             if let tauri::WindowEvent::Focused(focused) = event {
                 let registry = window.state::<HotkeyRegistry>();
                 registry.is_focused.store(*focused, Ordering::SeqCst);
+                // Clear stuck keys when losing focus: any key held at the moment of
+                // alt-tab/minimize would otherwise be permanently stuck in the set,
+                // causing the next background press of that key to be silently ignored
+                // as "auto-repeat".
+                if !focused {
+                    registry.pressed_keys.lock().unwrap().clear();
+                }
                 log_debug(&format!("[Focus] Main window focused: {}", focused));
             }
         })
@@ -465,7 +472,8 @@ mod macos_native {
             return event;
         }
 
-        let code = unsafe { CGEventGetIntegerValueField(event, 62) } as u64;
+        // kCGKeyboardEventKeycode = 9 (NOT 62 which is kCGEventSourceUserData)
+        let code = unsafe { CGEventGetIntegerValueField(event, 9) } as u64;
         if let Some(key) = map_keycode(code) {
             let ev_type = match type_ {
                 10 => EventType::KeyPress(key),
