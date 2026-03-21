@@ -21,6 +21,7 @@ export interface AppConfig {
 export interface VisualData {
   peak: number;
   samples: number[];
+  elapsed_secs: number;
 }
 
 export interface KeyTriggerEvent {

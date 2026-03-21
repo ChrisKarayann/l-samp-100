@@ -325,7 +325,9 @@ export class App implements OnInit, OnDestroy {
     this.audio.padRestored$.subscribe((key: string) => {
       const normalizedKey = key.toUpperCase();
       if (!this.pads().includes(normalizedKey)) return;
-      this.audio.recordTrigger(normalizedKey);
+      // Do NOT call recordTrigger here — activePads and startTimes are already
+      // correctly set by the idle poll. recordTrigger would overwrite startTimes
+      // with Date.now(), resetting the timer to zero.
       this.playingPads.update(set => {
         const newSet = new Set(set);
         newSet.add(normalizedKey);

@@ -47,12 +47,14 @@ pub struct Voice {
     fade_start_gain: f32,     // Snapshot of gain when fade-out starts
     fade_out_pos: usize,      // Progress of the fade-out specifically
     custom_release_set: bool, // Flag to prevent symmetry override when frontend provides effective_release
+    started_at: std::time::Instant, // Wall-clock start for elapsed timer (sent in LevelsResponse)
 }
 
 #[derive(serde::Serialize, Clone, Default)]
 pub struct VisualData {
     pub peak: f32,
     pub samples: Vec<f32>,
+    pub elapsed_secs: f32,
 }
 
 pub struct VisualState {
@@ -237,6 +239,7 @@ impl AudioEngine {
             fade_out_pos: 0,
             stop_command: false,
             custom_release_set: false,
+            started_at: std::time::Instant::now(),
         });
 
         Ok(())
@@ -557,19 +560,20 @@ fn write_audio(
             }
         }
 
-        visual_updates.push((voice.key.clone(), voice_peak, voice_samples));
+        visual_updates.push((voice.key.clone(), voice_peak, voice_samples, voice.started_at.elapsed().as_secs_f32()));
         !voice.stopped
     });
 
     if let Ok(mut visuals) = visuals_mutex.lock() {
         visuals.active_keys.clear();
-        for (key, peak, samples) in visual_updates {
+        for (key, peak, samples, elapsed_secs) in visual_updates {
             visuals.active_keys.push(key.clone());
             visuals.levels.insert(
                 key,
                 VisualData {
                     peak,
                     samples,
+                    elapsed_secs,
                 },
             );
         }

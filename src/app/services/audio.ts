@@ -107,9 +107,10 @@ export class Audio {
             backendActive.forEach(key => {
               if (!this.activePads.has(key)) {
                 this.activePads.add(key);
-                if (!this.startTimes.has(key)) {
-                  this.startTimes.set(key, Date.now() / 1000);
-                }
+                // Back-calculate the real start time using elapsed_secs from Rust so
+                // the timer shows correct elapsed time when the UI is reloaded mid-play.
+                const elapsedSecs = response.data[key]?.elapsed_secs ?? 0;
+                this.startTimes.set(key, Date.now() / 1000 - elapsedSecs);
                 this.latestLevels = response.data;
                 this.padRestored$.next(key);
               }

@@ -342,6 +342,7 @@ mod macos_native {
         fn objc_getClass(name: *const u8) -> id;
         fn sel_registerName(name: *const u8) -> id;
         fn objc_msgSend(obj: id, sel: id, ...) -> id;
+        fn objc_retain(obj: id) -> id;
     }
 
     /// Context passed to the raw callback
@@ -362,12 +363,16 @@ mod macos_native {
             let string_with_utf8_sel = sel_registerName("stringWithUTF8String:\0".as_ptr());
             let reason = objc_msgSend(reason_class, string_with_utf8_sel, "Hotkey Listener Persistence\0".as_ptr());
 
-            // NSActivityBackground | NSActivityLatencyCritical = 0xFF | 0xFF00000000
-            // Using a large bitmask to cover most background persistence flags
-            let options: u64 = 0x000000FF | 0x00000100 | 0x00000200 | 0x00000400; 
-            
-            let _ = objc_msgSend(process_info, begin_activity_sel, options, reason);
-            log_debug("[Listener] macOS App Nap DISABLED (Solid Mode)");
+            // NSActivityBackground (0xFF) | NSActivityLatencyCritical (0xFF00000000)
+            // CRITICAL: retain the token so App Nap stays disabled permanently.
+            // Without retain, the autoreleased token is freed on the next run-loop
+            // drain and App Nap immediately re-activates, suspending the listener thread.
+            let options: u64 = 0x0000_00FF | 0x0000_00FF_0000_0000;
+            let token = objc_msgSend(process_info, begin_activity_sel, options, reason);
+            if !token.is_null() {
+                objc_retain(token);
+            }
+            log_debug("[Listener] macOS App Nap DISABLED (token retained)");
         }
     }
 
@@ -631,14 +636,18 @@ fn handle_event(
             let mut is_playing = None;
 
             if permitted {
+                let is_focused = is_focused_flag.load(Ordering::Relaxed);
                 if k == "SPACE" {
                     log_debug("[Hook] Stop All (Space)");
                     audio.stop_all();
-                    // Emit directly so the frontend clears playing state regardless
-                    // of whether the window-focus-changed event has arrived yet.
-                    let _ = app_handle.emit("global-stop", ());
+                    // Only emit global-stop from Rust when unfocused. When focused, the JS
+                    // keydown handler fires onGlobalStop directly (no round-trip needed).
+                    // Emitting unconditionally raced with recordTrigger: Rust's emit arrived
+                    // after the new pad trigger, clearing activePads and stalling the poller.
+                    if !is_focused {
+                        let _ = app_handle.emit("global-stop", ());
+                    }
                 } else {
-                    let is_focused = is_focused_flag.load(Ordering::Relaxed);
                     log_debug(&format!("[Hook] Key: {}, Focused: {}", k, is_focused));
                     
                     if !is_focused {
