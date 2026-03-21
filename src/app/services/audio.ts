@@ -38,6 +38,7 @@ export class Audio {
   public padFinished$ = new Subject<string>();
   public fadeOutComplete$ = new Subject<string>();
   public loadingProgress$ = new Subject<{ key: string, progress: number }>();
+  public padRestored$ = new Subject<string>(); // fires post-reload when backend has active keys
 
   public onGlobalStop = new Subject<void>();
   public levelData$ = new Subject<Record<string, VisualData>>();
@@ -97,9 +98,25 @@ export class Audio {
         // While active, use High-Intensity (60fps) for smooth visualizers
         requestAnimationFrame(poll);
       } else {
-        // If silent, check again in 100ms (Low-Intensity/Idle)
-        // This saves massive IPC overhead when the app is just sitting there.
-        setTimeout(() => poll(), 500);
+        // Idle path: still check Rust periodically so we can recover state after
+        // a UI reload (when activePads is empty but audio is still playing in Rust).
+        setTimeout(async () => {
+          try {
+            const response = await this.tauriBridge.audioGetLevels();
+            const backendActive = new Set(response.active_keys);
+            backendActive.forEach(key => {
+              if (!this.activePads.has(key)) {
+                this.activePads.add(key);
+                if (!this.startTimes.has(key)) {
+                  this.startTimes.set(key, Date.now() / 1000);
+                }
+                this.latestLevels = response.data;
+                this.padRestored$.next(key);
+              }
+            });
+          } catch (_) {}
+          poll();
+        }, 500);
       }
     };
     poll();

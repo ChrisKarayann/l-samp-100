@@ -321,6 +321,19 @@ export class App implements OnInit, OnDestroy {
       this.activeKey.set(null);
     });
 
+    // Post-reload recovery: restore visuals for pads still playing in Rust
+    this.audio.padRestored$.subscribe((key: string) => {
+      const normalizedKey = key.toUpperCase();
+      if (!this.pads().includes(normalizedKey)) return;
+      this.audio.recordTrigger(normalizedKey);
+      this.playingPads.update(set => {
+        const newSet = new Set(set);
+        newSet.add(normalizedKey);
+        return newSet;
+      });
+      if (this.animationId === 0) this.startVisualizer();
+    });
+
     // Modal opening
     this.tauriBridge.onOpenModal.subscribe((mode: 'instructions' | 'settings' | 'info' | 'factory-reset' | 'clear-selected' | 'clear-all') => {
       this.modalMode.set(mode);
