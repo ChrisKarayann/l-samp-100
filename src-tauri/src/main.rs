@@ -634,6 +634,9 @@ fn handle_event(
                 if k == "SPACE" {
                     log_debug("[Hook] Stop All (Space)");
                     audio.stop_all();
+                    // Emit directly so the frontend clears playing state regardless
+                    // of whether the window-focus-changed event has arrived yet.
+                    let _ = app_handle.emit("global-stop", ());
                 } else {
                     let is_focused = is_focused_flag.load(Ordering::Relaxed);
                     log_debug(&format!("[Hook] Key: {}, Focused: {}", k, is_focused));

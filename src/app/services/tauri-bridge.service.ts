@@ -97,20 +97,16 @@ export class TauriBridgeService implements OnDestroy {
       // Listen for the new global-key-press from rdev (Background)
       const globalKeyPressUnlisten = await this.listen('global-key-press', (event: any) => {
         const { key, is_playing } = event.payload;
-        
-        // --- HYBRID LOGIC (Restored) ---
-        // If the window is BLURRED, we use the backend for both audio AND UI.
-        // If the window is FOCUSED, we ignore the backend hook because the native
-        // window 'keydown' listener handles it with lower latency and better input context.
-        // NOTE: using windowIsFocused (Rust-sourced) instead of document.hasFocus()
-        // because WKWebView on macOS reports hasFocus()=true even when unfocused.
-        if (!this.windowIsFocused) {
-          if (key === 'SPACE') {
-            this.onGlobalStop.next();
-          } else {
-            // is_playing is Some(bool) from backend rdev loop
-            this.onKeyTriggered.next({ key, isPlaying: is_playing as boolean });
-          }
+
+        // --- RACE-CONDITION-FREE GATE ---
+        // Rust only sets is_playing to a non-null value when it actually toggled
+        // audio in the background (is_focused = false on the Rust side). We use
+        // this as the authoritative gate instead of windowIsFocused, which can
+        // lag behind by one IPC round-trip (causing missed UI updates when the
+        // user presses a key immediately after switching away).
+        // SPACE stop is handled by the dedicated 'global-stop' Rust event.
+        if (is_playing !== null && is_playing !== undefined) {
+          this.onKeyTriggered.next({ key, isPlaying: is_playing as boolean });
         }
       });
 
