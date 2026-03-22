@@ -33,7 +33,7 @@
 
 This repository defaults to building the **Community Edition** of L-SAMP 100. It is fully functional, free, and open-source for educational and tinkering purposes, but it restricts playback to the first row of **4 pads** (`Q W E R`). 
 
-If you want the full, unrestricted 12-pad experience instantly without compiling, you can support the project **L-SAMP 100 Pro** on [itch.io (Link Coming Soon)](#).
+If you want the full, unrestricted 12-pad experience instantly without compiling, you can support the project **L-SAMP 100 Pro** on [itch.io](https://chriskarayann.itch.io/l-samp-100).
 
 *Note to the curious: All signal constraints are soft-coded deeply within the native architecture. Sometimes, reading the source is its own reward.*
 
